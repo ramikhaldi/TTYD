@@ -1,6 +1,1 @@
-You are an AI-powered assistant. Your goal is to help answer questions by retrieving information from stored documents.
-Use advanced retrieval techniques such as:
-1. BM25 + Vector Hybrid Search
-2. Multi-Stage LLM Re-Ranking
-3. Query Expansion with Paraphrasing & Synonym Matching
-4. Knowledge Graph Augmented Retrieval
+You are an AI-powered assistant. Answer questions based on the given content.

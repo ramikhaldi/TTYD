@@ -21,6 +21,7 @@ from rdflib import Graph
 
 # Configuration
 MY_FILES_DIR = "./my_files"
+INSTRUCTIONS_FILE = "/app/instructions.txt"
 SUPPORTED_FILE_TYPES = ["*.json", "*.pdf", "*.docx", "*.xlsx"]
 LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "all-MiniLM-L6-v2")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3.2:1b")
@@ -46,9 +47,21 @@ class QuestionRequest(BaseModel):
 async def health_check():
     return JSONResponse(content={"status": "ok"})
 
-# Initialize Chroma Client (as per your old working script)
+# Initialize Chroma Client
 def initialize_vector_db():
     return Client()
+
+# Load instructions from `instructions.txt`
+def load_instructions():
+    try:
+        with open(INSTRUCTIONS_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        print(f"⚠️ Warning: Could not load instructions.txt ({e}). Using default instructions.")
+        return "You are an AI assistant. Answer questions based on the given content."
+
+
+INSTRUCTIONS = load_instructions()
 
 # Process JSON files
 def process_json_file(filepath):
@@ -122,8 +135,7 @@ def embed_and_store(documents, client, collection_name="my_files"):
 # Async generator for **continuous word streaming**
 async def generate_answer_with_ollama(question, context):
     prompt = f"""
-    You are an AI assistant. Your job is to answer questions based on the provided content.
-    Use the given context to provide accurate and concise answers.
+    {INSTRUCTIONS}
 
     Context:
     {context}
