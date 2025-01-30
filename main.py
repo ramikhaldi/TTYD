@@ -4,6 +4,7 @@ import asyncio
 import hypercorn.asyncio
 import hypercorn.config
 import re
+import nltk
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -18,6 +19,7 @@ from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 from rank_bm25 import BM25Okapi
 from rdflib import Graph
+from nltk.tokenize import sent_tokenize
 
 # Configuration
 MY_FILES_DIR = "./my_files"
@@ -25,12 +27,11 @@ INSTRUCTIONS_FILE = "/app/instructions.txt"
 SUPPORTED_FILE_TYPES = ["*.json", "*.pdf", "*.docx", "*.xlsx"]
 LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "all-MiniLM-L6-v2")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3.2:1b")
-# Get Ollama's external server details from environment variables
+
+# Get Ollama's external server details
 OLLAMA_SCHEMA = os.getenv("OLLAMA_SCHEMA", "http")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
-
-# Construct the final Ollama server URL
 OLLAMA_SERVER = f"{OLLAMA_SCHEMA}://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
 CHROMA_DB_PATH = "./chroma_db"  # Local persistent storage
@@ -50,7 +51,6 @@ async def health_check():
 # Initialize Chroma Client
 def initialize_vector_db():
     return Client()
-
 # Load instructions from `instructions.txt`
 def load_instructions():
     try:
@@ -60,29 +60,46 @@ def load_instructions():
         print(f"⚠️ Warning: Could not load instructions.txt ({e}). Using default instructions.")
         return "You are an AI assistant. Answer questions based on the given content."
 
-
 INSTRUCTIONS = load_instructions()
 
-# Process JSON files
+# Initialize ChromaDB Client
+def initialize_vector_db():
+    return Client()
+
+# Chunking function for text splitting
+def chunk_text(text, max_chunk_size=512):
+    sentences = sent_tokenize(text)
+    chunks, current_chunk, current_length = [], [], 0
+
+    for sentence in sentences:
+        if current_length + len(sentence) > max_chunk_size:
+            chunks.append(" ".join(current_chunk))
+            current_chunk, current_length = [], 0
+        current_chunk.append(sentence)
+        current_length += len(sentence)
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
+# Process different file types
 def process_json_file(filepath):
     try:
         with open(filepath, "r", encoding="utf-8") as file:
             return file.read()
-    except UnicodeDecodeError:
-        print(f"Warning: Skipping file {filepath} due to encoding issues.")
+    except Exception as e:
+        print(f"Error processing JSON file {filepath}: {e}")
         return None
 
-# Process PDF files
 def process_pdf_file(filepath):
     try:
         reader = PdfReader(filepath)
-        text = "".join(page.extract_text() or "" for page in reader.pages)
-        return text
+        return "\n".join([page.extract_text() or "" for page in reader.pages])
     except Exception as e:
         print(f"Error processing PDF file {filepath}: {e}")
         return None
 
-# Process Word files
 def process_docx_file(filepath):
     try:
         doc = docx.Document(filepath)
@@ -91,7 +108,6 @@ def process_docx_file(filepath):
         print(f"Error processing Word file {filepath}: {e}")
         return None
 
-# Process Excel files
 def process_excel_file(filepath):
     try:
         excel_data = pd.ExcelFile(filepath)
@@ -100,7 +116,7 @@ def process_excel_file(filepath):
         print(f"Error processing Excel file {filepath}: {e}")
         return None
 
-# Read all supported files
+# Read and chunk supported files
 def read_supported_files(directory):
     documents = []
     for file_type in SUPPORTED_FILE_TYPES:
@@ -114,26 +130,68 @@ def read_supported_files(directory):
                 content = process_docx_file(filepath)
             elif filepath.endswith(".xlsx"):
                 content = process_excel_file(filepath)
-            
+
             if content:
-                documents.append({"content": content, "source": os.path.basename(filepath)})
+                chunks = chunk_text(content)  # ✅ Chunk large documents
+                for idx, chunk in enumerate(chunks):
+                    documents.append({"content": chunk, "source": f"{os.path.basename(filepath)}_chunk_{idx}"})
     return documents
 
-# Embed and store documents in Chroma
+# Embed and store chunks in ChromaDB
 def embed_and_store(documents, client, collection_name="my_files"):
     embeddings = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=LOCAL_MODEL_NAME)
     collection = client.get_or_create_collection(name=collection_name, embedding_function=embeddings)
-    
+
     for doc in documents:
         collection.add(
             documents=[doc["content"]],
             ids=[doc["source"]],
             metadatas=[{"source": doc["source"]}]
         )
+    
     return collection
 
-# Async generator for **continuous word streaming**
-async def generate_answer_with_ollama(question, context):
+# Tokenization for BM25
+def tokenize(text):
+    return text.lower().split()
+
+# Build BM25 Index
+def build_bm25_index(documents):
+    tokenized_corpus = [tokenize(doc["content"]) for doc in documents]
+    return BM25Okapi(tokenized_corpus), documents
+
+# Initialize ChromaDB and document indexing
+print("Initializing ChromaDB client...")
+client = initialize_vector_db()
+print("Reading and chunking supported files...")
+documents = read_supported_files(MY_FILES_DIR)
+print(f"Embedding {len(documents)} document chunks into ChromaDB...")
+collection = embed_and_store(documents, client)
+bm25, indexed_docs = build_bm25_index(documents)
+
+print(f"✅ Indexed {collection.count()} document chunks in ChromaDB.")
+
+# Hybrid retrieval: BM25 + Chroma Vector Search
+def hybrid_retrieval(question, top_k=10):
+    query_embedding = SentenceTransformer(LOCAL_MODEL_NAME).encode(question, convert_to_tensor=True)
+
+    # Vector Search in ChromaDB
+    vector_results = collection.query(query_texts=[question], n_results=top_k)
+    vector_chunks = vector_results["documents"][0] if vector_results["documents"] else []
+
+    # BM25 Search
+    bm25_scores = bm25.get_scores(tokenize(question))
+    bm25_top_chunks = [indexed_docs[i]["content"] for i in sorted(range(len(bm25_scores)), key=lambda k: bm25_scores[k], reverse=True)[:top_k]]
+
+    # Merge results
+    combined_chunks = list(set(vector_chunks + bm25_top_chunks))
+
+    return "\n".join(combined_chunks) if combined_chunks else "No relevant information found."
+
+# Async generator for Ollama response
+async def generate_answer_with_ollama(question):
+    context = hybrid_retrieval(question)
+
     prompt = f"""
     {INSTRUCTIONS}
 
@@ -145,6 +203,7 @@ async def generate_answer_with_ollama(question, context):
 
     Answer:
     """
+    #print(prompt)
 
     try:
         stream = chat(
@@ -170,46 +229,19 @@ async def generate_answer_with_ollama(question, context):
         # Send remaining text in the buffer
         if buffer:
             yield buffer
-
     except Exception as e:
         yield f"An error occurred while querying Ollama: {e}"
 
-
-# Build the chatbot retrieval system
-def build_retrieval_qa_system(collection):
-    def retrieve_and_answer(question):
-        results = collection.query(query_texts=[question], n_results=3)
-        documents = results["documents"][0] if results["documents"] else []
-        context = "\n".join(documents) if documents else "No relevant steps found."
-        return context
-    return retrieve_and_answer
-
-# Initialize Chroma and load documents
-print("Initializing Chroma client...")
-client = initialize_vector_db()
-print("Reading supported files...")
-documents = read_supported_files(MY_FILES_DIR)
-print(f"Embedding documents using {LOCAL_MODEL_NAME} and storing in Chroma...")
-collection = embed_and_store(documents, client)
-print(f"✅ Indexed {collection.count()} documents in ChromaDB.")
-print("Building the retrieval-augmented chatbot...")
-chatbot = build_retrieval_qa_system(collection)
-
-# FastAPI endpoint for chatbot interaction (POST)
+# FastAPI endpoint
 @app.post("/ask")
 async def ask(request: QuestionRequest):
     if not request.question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     
-    context = chatbot(request.question)
-    return StreamingResponse(generate_answer_with_ollama(request.question, context), media_type="text/plain")
+    return StreamingResponse(generate_answer_with_ollama(request.question), media_type="text/plain")
 
-# Run the Hypercorn server
+# Run server
 if __name__ == "__main__":
     config = hypercorn.config.Config()
-    config.bind = ["0.0.0.0:5000"]  # Listen on port 5000
-    config.alpn_protocols = ["h2", "http/1.1"]  # Support both HTTP/2 and HTTP/1.1
-    config.accesslog = "-"  # Log access to stdout
-    
-    print("🚀 Starting server on port 5000 (HTTP/2 enabled)...")
+    config.bind = ["0.0.0.0:5000"]
     asyncio.run(hypercorn.asyncio.serve(app, config))
