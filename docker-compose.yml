@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  chatbot:
+    build: .
+    container_name: ttyd_chatbot
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./instructions.txt:/app/instructions.txt
+      - ./my_files:/app/my_files
+    environment:
+      - OLLAMA_SCHEMA=${OLLAMA_SCHEMA:-http}  # Define schema dynamically
+      - OLLAMA_HOST=${OLLAMA_HOST:-localhost}  # Host where Ollama runs
+      - OLLAMA_PORT=${OLLAMA_PORT:-11434}  # Ollama server port
+      - CHROMA_DB_URL=http://chromadb:8000
+      - MODEL_NAME=llama3.2:3b
+      - LOCAL_MODEL_NAME=all-MiniLM-L6-v2
+    command: ["python", "main.py"]

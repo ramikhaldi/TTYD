@@ -1,0 +1,12 @@
+fastapi
+hypercorn
+PyPDF2
+pandas
+python-docx
+chromadb
+ollama
+sentence-transformers
+requests
+rdflib 
+transformers
+rank-bm25
