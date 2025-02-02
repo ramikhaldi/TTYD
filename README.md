@@ -139,7 +139,7 @@ TTYD is **open-source**, and contributions are welcome! 🎉
 
 1. Fork & clone the repo.
 2. Modify/extend/Improve.
-3. Run locally with `docker-compose up` and benchmark.
+3. Run, Test, and benchmark.
 4. Submit a pull request. 🚀
 
 ---
