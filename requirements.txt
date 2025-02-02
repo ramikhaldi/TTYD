@@ -11,3 +11,6 @@ rdflib
 transformers
 rank_bm25
 nltk
+weaviate-client
+pypdf
+sentence-transformers
