@@ -5,14 +5,13 @@ import hypercorn.asyncio
 import hypercorn.config
 import re
 import nltk
+import weaviate
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-from chromadb import Client
-from chromadb.utils import embedding_functions
 from ollama import chat
-from PyPDF2 import PdfReader
+from pypdf import PdfReader  # ✅ Use pypdf instead of PyPDF2
 import docx
 import pandas as pd
 from sentence_transformers import SentenceTransformer
@@ -20,6 +19,12 @@ from transformers import pipeline
 from rank_bm25 import BM25Okapi
 from rdflib import Graph
 from nltk.tokenize import sent_tokenize
+from weaviate.connect import ConnectionParams
+from weaviate.classes.config import Configure, Property
+from weaviate.exceptions import WeaviateBaseError  # ✅ Correct Exception Handling
+from sentence_transformers import SentenceTransformer  # ✅ Needed for encoding queries
+from rank_bm25 import BM25Okapi  # ✅ Needed for BM25 scoring
+
 
 # Configuration
 MY_FILES_DIR = "./my_files"
@@ -34,24 +39,50 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
 OLLAMA_SERVER = f"{OLLAMA_SCHEMA}://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
-CHROMA_DB_PATH = "./chroma_db"  # Local persistent storage
+# Weaviate Configuration
+WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "weaviate")
+WEAVIATE_PORT = os.getenv("WEAVIATE_PORT", "8080")
+WEAVIATE_ALPHA = float(os.getenv("WEAVIATE_ALPHA", "0.5"))  # ✅ Configurable hybrid search parameter
 
 # Initialize FastAPI
 app = FastAPI()
 
-# Request model
-class QuestionRequest(BaseModel):
-    question: str
+# ✅ Define `ensure_collection_exists` **before** it's used
+def ensure_collection_exists(client, collection_name="Document"):
+    try:
+        return client.collections.get(collection_name)
+    except WeaviateBaseError:  # ✅ Catch exception when collection does not exist
+        return client.collections.create(
+            name=collection_name,
+            configure_vectorizer=True,  # ✅ Required for text2vec-transformers
+            vectorizer_config=Configure.Vectorizer.text2vec_transformers(
+                model=LOCAL_MODEL_NAME,  # ✅ Make sure it matches your SentenceTransformer model
+                pooling_strategy="cls",
+                vectorize_property_name=True  # ✅ Enable automatic vectorization of `content`
+            ),
+            properties=[
+                Property(name="content", data_type="text"),
+                Property(name="source", data_type="text"),
+            ]
+        )
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    return JSONResponse(content={"status": "ok"})
 
-# Initialize Chroma Client
-def initialize_vector_db():
-    return Client()
-# Load instructions from `instructions.txt`
+# ✅ Set Weaviate connection details (local-only, no external API calls)
+client = weaviate.WeaviateClient(
+    connection_params=ConnectionParams.from_params(
+        http_host=WEAVIATE_HOST,
+        http_port=int(WEAVIATE_PORT),
+        http_secure=False,
+        grpc_host=WEAVIATE_HOST,
+        grpc_port=50051,
+        grpc_secure=False,
+    ),
+    skip_init_checks=False
+)
+
+client.connect()
+
+# ✅ Load instructions
 def load_instructions():
     try:
         with open(INSTRUCTIONS_FILE, "r", encoding="utf-8") as f:
@@ -62,11 +93,7 @@ def load_instructions():
 
 INSTRUCTIONS = load_instructions()
 
-# Initialize ChromaDB Client
-def initialize_vector_db():
-    return Client()
-
-# Chunking function for text splitting
+# ✅ Chunking function
 def chunk_text(text, max_chunk_size=512):
     sentences = sent_tokenize(text)
     chunks, current_chunk, current_length = [], [], 0
@@ -77,118 +104,99 @@ def chunk_text(text, max_chunk_size=512):
             current_chunk, current_length = [], 0
         current_chunk.append(sentence)
         current_length += len(sentence)
-
     if current_chunk:
         chunks.append(" ".join(current_chunk))
-
     return chunks
 
-# Process different file types
-def process_json_file(filepath):
-    try:
-        with open(filepath, "r", encoding="utf-8") as file:
-            return file.read()
-    except Exception as e:
-        print(f"Error processing JSON file {filepath}: {e}")
-        return None
-
-def process_pdf_file(filepath):
-    try:
-        reader = PdfReader(filepath)
-        return "\n".join([page.extract_text() or "" for page in reader.pages])
-    except Exception as e:
-        print(f"Error processing PDF file {filepath}: {e}")
-        return None
-
-def process_docx_file(filepath):
-    try:
-        doc = docx.Document(filepath)
-        return "\n".join([para.text for para in doc.paragraphs])
-    except Exception as e:
-        print(f"Error processing Word file {filepath}: {e}")
-        return None
-
-def process_excel_file(filepath):
-    try:
-        excel_data = pd.ExcelFile(filepath)
-        return "\n".join(excel_data.parse(sheet).to_string(index=False, header=True) for sheet in excel_data.sheet_names)
-    except Exception as e:
-        print(f"Error processing Excel file {filepath}: {e}")
-        return None
-
-# Read and chunk supported files
+# ✅ Read supported files
 def read_supported_files(directory):
     documents = []
     for file_type in SUPPORTED_FILE_TYPES:
         for filepath in glob.glob(os.path.join(directory, file_type)):
-            content = None
             if filepath.endswith(".json"):
-                content = process_json_file(filepath)
+                with open(filepath, "r", encoding="utf-8") as file:
+                    content = file.read()
             elif filepath.endswith(".pdf"):
-                content = process_pdf_file(filepath)
+                content = "\n".join([page.extract_text() or "" for page in PdfReader(filepath).pages])
             elif filepath.endswith(".docx"):
-                content = process_docx_file(filepath)
+                content = "\n".join([para.text for para in docx.Document(filepath).paragraphs])
             elif filepath.endswith(".xlsx"):
-                content = process_excel_file(filepath)
+                excel_data = pd.ExcelFile(filepath)
+                content = "\n".join(excel_data.parse(sheet).to_string(index=False, header=True) for sheet in excel_data.sheet_names)
+            else:
+                content = None
 
             if content:
-                chunks = chunk_text(content)  # ✅ Chunk large documents
-                for idx, chunk in enumerate(chunks):
+                for idx, chunk in enumerate(chunk_text(content)):
                     documents.append({"content": chunk, "source": f"{os.path.basename(filepath)}_chunk_{idx}"})
     return documents
 
-# Embed and store chunks in ChromaDB
-def embed_and_store(documents, client, collection_name="my_files"):
-    embeddings = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=LOCAL_MODEL_NAME)
-    collection = client.get_or_create_collection(name=collection_name, embedding_function=embeddings)
-
+# ✅ Embed and store in Weaviate
+def embed_and_store(documents, client, collection_name="Document"):
+    embedding_model = SentenceTransformer(LOCAL_MODEL_NAME)
+    collection = ensure_collection_exists(client, collection_name)
     for doc in documents:
-        collection.add(
-            documents=[doc["content"]],
-            ids=[doc["source"]],
-            metadatas=[{"source": doc["source"]}]
+        embedding = embedding_model.encode(doc["content"]).tolist()
+        collection.data.insert(
+            properties={
+                "content": doc["content"],
+                "source": doc["source"],
+                "vector": embedding
+            }
         )
-    
-    return collection
 
-# Tokenization for BM25
+# ✅ BM25 Indexing
 def tokenize(text):
     return text.lower().split()
 
-# Build BM25 Index
 def build_bm25_index(documents):
-    tokenized_corpus = [tokenize(doc["content"]) for doc in documents]
-    return BM25Okapi(tokenized_corpus), documents
+    return BM25Okapi([tokenize(doc["content"]) for doc in documents]), documents
 
-# Initialize ChromaDB and document indexing
-print("Initializing ChromaDB client...")
-client = initialize_vector_db()
-print("Reading and chunking supported files...")
+
+
+# Initialize Weaviate and document indexing
+print("Initializing Weaviate client...")
 documents = read_supported_files(MY_FILES_DIR)
-print(f"Embedding {len(documents)} document chunks into ChromaDB...")
-collection = embed_and_store(documents, client)
-bm25, indexed_docs = build_bm25_index(documents)
+print(f"Embedding {len(documents)} document chunks into Weaviate...")
+embed_and_store(documents, client)
+bm25, indexed_docs = build_bm25_index(documents)  # ✅ Ensure these variables are set
 
-print(f"✅ Indexed {collection.count()} document chunks in ChromaDB.")
 
-# Hybrid retrieval: BM25 + Chroma Vector Search
+# ✅ Hybrid retrieval
 def hybrid_retrieval(question, top_k=10):
-    query_embedding = SentenceTransformer(LOCAL_MODEL_NAME).encode(question, convert_to_tensor=True)
+    # ✅ Encode the question using the same embedding model
+    embedding_model = SentenceTransformer(LOCAL_MODEL_NAME)
+    question_embedding = embedding_model.encode(question).tolist()  # Convert to list for Weaviate
 
-    # Vector Search in ChromaDB
-    vector_results = collection.query(query_texts=[question], n_results=top_k)
-    vector_chunks = vector_results["documents"][0] if vector_results["documents"] else []
+    collection = client.collections.get("Document")
+    response = collection.query.hybrid(
+        query=question,
+        vector=question_embedding,  # ✅ Pass precomputed vector
+        alpha=WEAVIATE_ALPHA,
+        limit=top_k,
+        return_properties=["content", "source"]
+    )
 
-    # BM25 Search
-    bm25_scores = bm25.get_scores(tokenize(question))
-    bm25_top_chunks = [indexed_docs[i]["content"] for i in sorted(range(len(bm25_scores)), key=lambda k: bm25_scores[k], reverse=True)[:top_k]]
+    vector_chunks = response.objects  # ✅ Correct response parsing
+    bm25_scores = bm25.get_scores(tokenize(question))  # ✅ Fix missing variable
+    bm25_top_chunks = [
+        indexed_docs[i]["content"]
+        for i in sorted(range(len(bm25_scores)), key=lambda k: bm25_scores[k], reverse=True)[:top_k]
+    ]
 
-    # Merge results
-    combined_chunks = list(set(vector_chunks + bm25_top_chunks))
+    if not vector_chunks and not bm25_top_chunks:
+        return "No relevant information found."
 
-    return "\n".join(combined_chunks) if combined_chunks else "No relevant information found."
+    combined_chunks = list(set([doc.properties["content"] for doc in vector_chunks] + bm25_top_chunks))
+    return "\n".join(combined_chunks)
 
-# Async generator for Ollama response
+
+
+# ✅ Ensure this class is defined at the beginning
+class QuestionRequest(BaseModel):
+    question: str
+
+# ✅ Keep generate_answer_with_ollama before calling it
 async def generate_answer_with_ollama(question):
     context = hybrid_retrieval(question)
 
@@ -203,7 +211,7 @@ async def generate_answer_with_ollama(question):
 
     Answer:
     """
-    #print(prompt)
+    print(prompt)
 
     try:
         stream = chat(
@@ -230,9 +238,14 @@ async def generate_answer_with_ollama(question):
         if buffer:
             yield buffer
     except Exception as e:
-        yield f"An error occurred while querying Ollama: {e}"
+        yield f"An error occurred: {e}"
 
-# FastAPI endpoint
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return JSONResponse(content={"status": "ok"})
+# ✅ Define FastAPI endpoint AFTER defining QuestionRequest and generate_answer_with_ollama
 @app.post("/ask")
 async def ask(request: QuestionRequest):
     if not request.question:
@@ -240,8 +253,15 @@ async def ask(request: QuestionRequest):
     
     return StreamingResponse(generate_answer_with_ollama(request.question), media_type="text/plain")
 
-# Run server
+
+# ✅ Run server with graceful shutdown
+async def main():
+    try:
+        config = hypercorn.config.Config()
+        config.bind = ["0.0.0.0:5000"]
+        await hypercorn.asyncio.serve(app, config)
+    finally:
+        client.close()  # ✅ Properly close Weaviate connection
+
 if __name__ == "__main__":
-    config = hypercorn.config.Config()
-    config.bind = ["0.0.0.0:5000"]
-    asyncio.run(hypercorn.asyncio.serve(app, config))
+    asyncio.run(main())  # ✅ Run with proper cleanup

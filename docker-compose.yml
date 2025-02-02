@@ -11,10 +11,21 @@ services:
       - ./instructions.txt:/app/instructions.txt
       - ./my_files:/app/my_files
     environment:
-      - OLLAMA_SCHEMA=${OLLAMA_SCHEMA:-http}  # Define schema dynamically
-      - OLLAMA_HOST=${OLLAMA_HOST:-localhost}  # Host where Ollama runs
-      - OLLAMA_PORT=${OLLAMA_PORT:-11434}  # Ollama server port
-      - CHROMA_DB_URL=http://chromadb:8000
+      - OLLAMA_SCHEMA=${OLLAMA_SCHEMA:-http}
+      - OLLAMA_HOST=${OLLAMA_HOST:-localhost}
+      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
+      - WEAVIATE_HOST=${WEAVIATE_HOST:-weaviate}
+      - WEAVIATE_PORT=${WEAVIATE_PORT:-8080}
+      - WEAVIATE_ALPHA=${WEAVIATE_ALPHA:-0.5}
       - MODEL_NAME=llama3.2:3b
       - LOCAL_MODEL_NAME=all-MiniLM-L6-v2
-    command: ["python", "main.py"]
+
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: weaviate
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
