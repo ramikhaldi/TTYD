@@ -102,8 +102,9 @@ TTYD allows you to **fine-tune** its behavior via **environment variables** in `
 | `MODEL_NAME`         | `llama3.2:3b`      | Local AI model used by Ollama                                           |
 | `LOCAL_MODEL_NAME`   | `all-MiniLM-L6-v2` | Sentence Transformer model for vector search                            |
 
-🔹 **Adjust these in** `docker-compose.yml` **or export them before running.**
+🔹 Adjust these in `docker-compose.yml`
 
+🔹 The `instructions.txt` file can be adapted to fit your specific needs.
 
 ---
 
