@@ -30,19 +30,20 @@ from rank_bm25 import BM25Okapi  # ✅ Needed for BM25 scoring
 MY_FILES_DIR = "./my_files"
 INSTRUCTIONS_FILE = "/app/instructions.txt"
 SUPPORTED_FILE_TYPES = ["*.json", "*.pdf", "*.docx", "*.xlsx"]
-LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "all-MiniLM-L6-v2")
-MODEL_NAME = os.getenv("MODEL_NAME", "llama3.2:1b")
+LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
 # Get Ollama's external server details
-OLLAMA_SCHEMA = os.getenv("OLLAMA_SCHEMA", "http")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
-OLLAMA_PORT = os.getenv("OLLAMA_PORT", "11434")
+OLLAMA_SCHEMA = os.getenv("OLLAMA_SCHEMA")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST")
+OLLAMA_PORT = os.getenv("OLLAMA_PORT")
+OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 OLLAMA_SERVER = f"{OLLAMA_SCHEMA}://{OLLAMA_HOST}:{OLLAMA_PORT}"
 
 # Weaviate Configuration
-WEAVIATE_HOST = os.getenv("WEAVIATE_HOST", "weaviate")
-WEAVIATE_PORT = os.getenv("WEAVIATE_PORT", "8080")
-WEAVIATE_ALPHA = float(os.getenv("WEAVIATE_ALPHA", "0.5"))  # ✅ Configurable hybrid search parameter
+WEAVIATE_HOST = os.getenv("WEAVIATE_HOST")
+WEAVIATE_PORT = os.getenv("WEAVIATE_PORT")
+WEAVIATE_ALPHA = float(os.getenv("WEAVIATE_ALPHA"))  # ✅ Configurable hybrid search parameter
 
 # Initialize FastAPI
 app = FastAPI()
@@ -218,6 +219,9 @@ async def generate_answer_with_ollama(question):
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             stream=True,
+            options={
+                "temperature": float(OLLAMA_TEMPERATURE)
+            },
         )
 
         buffer = ""

@@ -15,10 +15,6 @@ RUN pip install sentence-transformers
 
 COPY . .
 
-ENV OLLAMA_SCHEMA="http"
-ENV OLLAMA_HOST="host.docker.internal"
-ENV OLLAMA_PORT="11434"
-
 ENV PYTHONUNBUFFERED=1
 
 # Start the chatbot
