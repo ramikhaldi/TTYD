@@ -249,6 +249,7 @@ async def generate_answer_with_ollama(question):
 @app.get("/health")
 async def health_check():
     return JSONResponse(content={"status": "ok"})
+
 # ✅ Define FastAPI endpoint AFTER defining QuestionRequest and generate_answer_with_ollama
 @app.post("/ask")
 async def ask(request: QuestionRequest):
@@ -258,14 +259,19 @@ async def ask(request: QuestionRequest):
     return StreamingResponse(generate_answer_with_ollama(request.question), media_type="text/plain")
 
 
-# ✅ Run server with graceful shutdown
-async def main():
-    try:
-        config = hypercorn.config.Config()
-        config.bind = ["0.0.0.0:5000"]
-        await hypercorn.asyncio.serve(app, config)
-    finally:
-        client.close()  # ✅ Properly close Weaviate connection
+# Determine the number of CPU cores and set the number of workers accordingly
+cpu_cores = os.cpu_count()  # Get the number of CPU cores
+workers = cpu_cores if cpu_cores is not None else 1  # Use number of cores, default to 1 if unavailable
 
+# Set Hypercorn configuration with workers based on the number of CPU cores
+config = hypercorn.config.Config()
+config.bind = ["0.0.0.0:5000"]  # Ensure binding is correct
+config.alpn_protocols = ["h2", "http/1.1"]  # Explicitly allow HTTP/2 first
+config.workers = workers  # Set the number of workers based on the number of CPU cores
+config.accesslog = "-"
+
+# Run the Hypercorn server with multiprocessing support (using asyncio)
 if __name__ == "__main__":
-    asyncio.run(main())  # ✅ Run with proper cleanup
+    print(f"🚀 Starting server with {workers} workers on port 5000...")
+    # Use the correct asyncio method to start the server
+    asyncio.run(hypercorn.asyncio.serve(app, config))
