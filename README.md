@@ -88,7 +88,7 @@ curl -X POST "http://localhost:5000/ask" -H "Content-Type: application/json" -d 
 
 ## ⚙️ Configurable Parameters
 
-TTYD allows you to **fine-tune** its behavior via **environment variables** in `docker-compose.yml` or `.env`.
+TTYD allows you to **fine-tune** its behavior via **environment variables** in `docker-compose.yml`.
 
 | Parameter            | Default Value      | Description                                                             |
 | -------------------- | ------------------ | ----------------------------------------------------------------------- |
