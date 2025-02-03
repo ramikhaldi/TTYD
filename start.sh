@@ -6,7 +6,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}🔍 Running System Sanity Check...${NC}"
+echo ================================
+echo  🚀 Starting Talk to Your Data (TTYD)
+echo ================================
 
 # ✅ Check if Docker is installed
 if ! command -v docker &> /dev/null; then
