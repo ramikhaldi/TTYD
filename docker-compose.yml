@@ -49,3 +49,5 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s  # ✅ Gives more time for Ollama to start before marking failure
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
