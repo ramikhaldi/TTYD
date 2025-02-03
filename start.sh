@@ -61,4 +61,4 @@ fi
 echo -e "${YELLOW}🚀 Starting TTYD...${NC}"
 
 # ✅ Start the container
-docker-compose up --build
+docker compose up --build

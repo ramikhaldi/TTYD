@@ -71,9 +71,9 @@ if exist .env (
 :: Start Docker Compose with appropriate flags
 echo 🔥 Starting services...
 if "%GPU_SUPPORT%"=="yes" (
-    docker-compose --env-file .env up --build --gpus all
+    docker compose --env-file .env up --build --gpus all
 ) else (
-    docker-compose --env-file .env up --build
+    docker compose --env-file .env up --build
 )
 
 exit /b 0
