@@ -10,21 +10,13 @@ services:
     volumes:
       - ./instructions.txt:/app/instructions.txt
       - ./my_files:/app/my_files
-    environment:
-      - OLLAMA_SCHEMA=${OLLAMA_SCHEMA:-http}
-      # `host.docker.internal` is a special DNS name required by Docker Desktop on Windows/macOS 
-      # to resolve localhost. On Linux, it does not exist by default, so we add `extra_hosts` to 
-      # ensure it works. If Ollama runs externally, replace this with its actual IP.
-      - OLLAMA_HOST=${OLLAMA_HOST:-host.docker.internal}
-      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
-      - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.5}
-      - WEAVIATE_HOST=${WEAVIATE_HOST:-weaviate}
-      - WEAVIATE_PORT=${WEAVIATE_PORT:-8080}
-      - WEAVIATE_ALPHA=${WEAVIATE_ALPHA:-0.5}
-      - MODEL_NAME=llama3.2:3b
-      - LOCAL_MODEL_NAME=all-MiniLM-L6-v2
+    env_file:
+      - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      ollama_check_server:
+        condition: service_healthy  # ✅ Ensures Ollama server is reachable before chatbot starts
 
   weaviate:
     image: semitechnologies/weaviate:latest
@@ -35,3 +27,25 @@ services:
     environment:
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
       - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+
+  ollama_check_server:
+    image: curlimages/curl:latest
+    container_name: ollama_check_server
+    restart: "no"
+    env_file:
+      - .env
+    command: >
+      sh -c "
+      until curl -s --head --request GET '${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT}' | grep '200 OK'; do
+        echo 'Waiting for Ollama server...';
+        sleep 2;
+      done;
+      echo '✅ Ollama server is up and running!';
+      exit 0;
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-s", "--head", "--request", "GET", "http://${OLLAMA_HOST}:${OLLAMA_PORT}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s  # ✅ Gives more time for Ollama to start before marking failure
