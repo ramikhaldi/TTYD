@@ -67,7 +67,7 @@ cd ttyd
 ### 2️⃣ **Run with Docker**
 
 ```sh
-docker-compose up --build
+docker compose up --build
 ```
 
 ### 3️⃣ **Access TTYD**
