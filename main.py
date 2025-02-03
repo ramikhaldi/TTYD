@@ -165,31 +165,35 @@ bm25, indexed_docs = build_bm25_index(documents)  # ✅ Ensure these variables a
 
 # ✅ Hybrid retrieval
 def hybrid_retrieval(question, top_k=10):
-    # ✅ Encode the question using the same embedding model
     embedding_model = SentenceTransformer(LOCAL_MODEL_NAME)
-    question_embedding = embedding_model.encode(question).tolist()  # Convert to list for Weaviate
+    question_embedding = embedding_model.encode(question).tolist()
 
     collection = client.collections.get("Document")
     response = collection.query.hybrid(
         query=question,
-        vector=question_embedding,  # ✅ Pass precomputed vector
+        vector=question_embedding,
         alpha=WEAVIATE_ALPHA,
         limit=top_k,
         return_properties=["content", "source"]
     )
 
-    vector_chunks = response.objects  # ✅ Correct response parsing
-    bm25_scores = bm25.get_scores(tokenize(question))  # ✅ Fix missing variable
+    vector_chunks = response.objects  # Correct response parsing
+    bm25_scores = bm25.get_scores(tokenize(question))
     bm25_top_chunks = [
-        indexed_docs[i]["content"]
+        {"content": indexed_docs[i]["content"], "source": indexed_docs[i]["source"]}
         for i in sorted(range(len(bm25_scores)), key=lambda k: bm25_scores[k], reverse=True)[:top_k]
     ]
 
     if not vector_chunks and not bm25_top_chunks:
-        return "No relevant information found."
+        return [], "No relevant information found."
 
-    combined_chunks = list(set([doc.properties["content"] for doc in vector_chunks] + bm25_top_chunks))
-    return "\n".join(combined_chunks)
+    retrieved_docs = [
+        {"content": doc.properties["content"], "source": doc.properties["source"]}
+        for doc in vector_chunks
+    ] + bm25_top_chunks
+
+    return retrieved_docs
+
 
 
 
@@ -198,30 +202,48 @@ class QuestionRequest(BaseModel):
     question: str
 
 # ✅ Keep generate_answer_with_ollama before calling it
+# ✅ Improved citation system and removed chunk details
 async def generate_answer_with_ollama(question):
-    context = hybrid_retrieval(question)
+    retrieved_docs = hybrid_retrieval(question)
 
+    if not retrieved_docs:
+        yield "No relevant information found."
+        return
+
+    # ✅ Deduplicate retrieved content to avoid repeated paragraphs
+    unique_content = {}
+    for doc in retrieved_docs:
+        file_name = doc['source'].split("_chunk_")[0]  # Extract actual file name without chunk details
+        if file_name not in unique_content:
+            unique_content[file_name] = doc['content']
+
+    # ✅ Format retrieved documents with citations
+    formatted_context = "\n\n".join(
+        [f"[{i+1}] {text} (Source: {source})" for i, (source, text) in enumerate(unique_content.items())]
+    )
+
+    # ✅ Construct the AI prompt with explicit citation instructions
     prompt = f"""
     {INSTRUCTIONS}
 
     Context:
-    {context}
+    {formatted_context}
 
     Question:
     {question}
 
     Answer:
+    Please generate an answer **based on the provided context** and cite sources using [number] format where applicable.
     """
-    print(prompt)
+
+    print(prompt)  # Debugging: Print prompt for verification
 
     try:
         stream = chat(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             stream=True,
-            options={
-                "temperature": float(OLLAMA_TEMPERATURE)
-            },
+            options={"temperature": float(OLLAMA_TEMPERATURE)},
         )
 
         buffer = ""
@@ -238,9 +260,15 @@ async def generate_answer_with_ollama(question):
 
                 buffer = words[-1]  # Keep last word to join with the next chunk
 
-        # Send remaining text in the buffer
+        # ✅ Send remaining text in the buffer
         if buffer:
             yield buffer
+
+        # ✅ Append the source list at the end (without chunk numbers)
+        yield "\n\n**Sources:**\n" + "\n".join(
+            [f"- **[{i+1}]** {source}" for i, source in enumerate(unique_content.keys())]
+        )
+
     except Exception as e:
         yield f"An error occurred: {e}"
 
