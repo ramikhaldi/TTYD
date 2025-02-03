@@ -67,7 +67,7 @@ cd ttyd
 ### 2️⃣ **Run with Docker**
 
 ```sh
-docker-compose up --build
+docker compose up --build
 ```
 
 ### 3️⃣ **Access TTYD**
@@ -93,7 +93,7 @@ TTYD allows you to **fine-tune** its behavior via **environment variables** in `
 | Parameter            | Default Value      | Description                                                             |
 | -------------------- | ------------------ | ----------------------------------------------------------------------- |
 | `OLLAMA_SCHEMA`      | `http`             | Communication protocol for Ollama                                       |
-| `OLLAMA_HOST`        | `localhost`        | Host where Ollama is running (local, on-premise, or cloud-based)       |
+| `OLLAMA_HOST`        | `localhost`        | Host where Ollama is running (local, or on-premise)                     |
 | `OLLAMA_PORT`        | `11434`            | Port for Ollama API                                                     |
 | `OLLAMA_TEMPERATURE` | `0.5`              | Adjusts response creativity (0 = deterministic, 1+ = diverse)           |
 | `WEAVIATE_HOST`      | `weaviate`         | Hostname for Weaviate (vector database)                                 |
