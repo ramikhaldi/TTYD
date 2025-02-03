@@ -6,9 +6,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-echo ================================
-echo  🚀 Starting Talk to Your Data (TTYD)
-echo ================================
+echo -e "${YELLOW}================================${NC}"
+echo -e "${GREEN} 🚀 Starting Talk to Your Data (TTYD)${NC}"
+echo -e "${YELLOW}================================${NC}"
 
 # ✅ Check if Docker is installed
 if ! command -v docker &> /dev/null; then
