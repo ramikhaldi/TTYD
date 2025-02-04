@@ -26,84 +26,74 @@ TTYD combines **retrieval-augmented generation (RAG)** with hybrid search techni
 
 - 1️⃣ **Document Ingestion** – It processes PDFs, Word, Excel, and JSON files, chunking them into smaller pieces.
 - 2️⃣ **Hybrid Search Engine** – Uses **BM25** (statistical search) and **Weaviate vector search** for accurate information retrieval.
-- 3️⃣ **AI Answering** – The retrieved context is passed to a **hosted Ollama model** (e.g., Llama 3) for response generation.
+- 3️⃣ **AI Answering** – The retrieved context is passed to a **containerized Ollama model** (e.g., Llama 3) for response generation.
 
 ---
 
 ## 🛠️ Prerequisites
 
-### 🧠 Ensure Ollama is Installed and Running
-
-Before using TTYD, ensure **[Ollama](https://ollama.com)** is installed and running with your preferred model. Ollama can run **locally, on-premise, or a remote host** of your choice.
-
-### 🐳 Install Docker
-
-#### 🖥️ **For Windows Users**
-
+### 🖥️ **For Windows Users**
 - Install **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**
-- Ensure WSL 2 backend is enabled (recommended for performance)
-- Make sure Linux Containers are enabled
+- Ensure **WSL 2 backend** is enabled (recommended for performance)
+- Make sure **Linux Containers** are enabled
 
-#### 🐧 **For Linux Users**
-
+### 🐧 **For Linux Users**
 - Install **Docker Engine** ([Guide](https://docs.docker.com/engine/install/))
 - Install **Docker Compose** ([Guide](https://docs.docker.com/compose/install/))
 
-📌 **Ensure Docker is running before proceeding with setup by checking:**
-```sh
-docker ps
-```
+📌 **TTYD automatically detects your environment (GPU/CPU) and optimizes accordingly.**
 
 ---
 
-## 🛠️ Installation & Setup
+## 🚀 Installation & Running
 
 ### 1️⃣ **Clone the Repository**
-
 ```sh
 git clone https://github.com/ramikhaldi/TTYD
 cd ttyd
 ```
 
-### 2️⃣ **Run with Docker**
-
+### 2️⃣ **Run TTYD**
+#### 🔹 **On Linux/macOS**
 ```sh
-docker compose up --build
+./start.sh
 ```
 
-### 3️⃣ **Access TTYD**
-
-Once running, access the chatbot via:
-
+#### 🔹 **On Windows**
 ```sh
-http://localhost:5000
+start.bat
 ```
 
-To send a test query:
+This **automatically performs a comprehensive sanity check**, verifying:
+- ✅ **Docker & Docker Compose**
+- ✅ **NVIDIA GPU support & containerization**
+
+If any issue is detected, the script will provide **clear guidance on how to fix it**.
+
+---
+
+## ⚡ Real-Time Streaming Responses (cURL Example)
+
+TTYD supports **HTTP/2** for **real-time streaming** responses. To fully leverage streaming, disable client-side buffering in e.g., cURL:
 
 ```sh
-curl -X POST "http://localhost:5000/ask" -H "Content-Type: application/json" -d '{"question": "Summarize my files."}'
+curl -N -X POST "http://localhost:5000/ask" -H "Content-Type: application/json" -d '{"question": "Summarize my files."}'
 ```
 
 ---
 
 ## ⚙️ Configurable Parameters
 
-TTYD allows you to **fine-tune** its behavior via **environment variables** in `docker-compose.yml`.
+TTYD allows **fine-tuning** via **environment variables** in the `.env` file.
 
 | Parameter            | Default Value      | Description                                                             |
 | -------------------- | ------------------ | ----------------------------------------------------------------------- |
-| `OLLAMA_SCHEMA`      | `http`             | Communication protocol for Ollama                                       |
-| `OLLAMA_HOST`        | `localhost`        | Host where Ollama is running (local, or on-premise)                     |
-| `OLLAMA_PORT`        | `11434`            | Port for Ollama API                                                     |
 | `OLLAMA_TEMPERATURE` | `0.5`              | Adjusts response creativity (0 = deterministic, 1+ = diverse)           |
-| `WEAVIATE_HOST`      | `weaviate`         | Hostname for Weaviate (vector database)                                 |
-| `WEAVIATE_PORT`      | `8080`             | Port for Weaviate                                                       |
 | `WEAVIATE_ALPHA`     | `0.5`              | Hybrid search weight (0 = BM25 only, 1 = vector search only)            |
 | `MODEL_NAME`         | `llama3.2:3b`      | Local AI model used by Ollama                                           |
 | `LOCAL_MODEL_NAME`   | `all-MiniLM-L6-v2` | Sentence Transformer model for vector search                            |
 
-🔹 Adjust these in `docker-compose.yml`
+🔹 Adjust these in `.env`
 
 🔹 The `instructions.txt` file can be adapted to fit your specific needs.
 
@@ -129,6 +119,8 @@ To use your own files, **place them in** `my_files/` **before starting TTYD.**
 - **Ollama AI Customization** – Easily swap models (Llama, DeepSeek, Mistral, Gemma, etc.).
 - **Live Streaming Responses** – Faster interactions via **FastAPI Streaming API**.
 - **Domain-Specific Accuracy** – Tailor AI to your knowledge base with **minimal hallucination risk**.
+- **GPU Acceleration Support** – **Automatically detects and enables GPU support** (if available).
+- **Comprehensive Sanity Check** – Before starting, all dependencies are validated.
 
 ---
 
