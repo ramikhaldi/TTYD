@@ -15,10 +15,13 @@ if %errorlevel% neq 0 (
 echo [OK] Docker found!
 
 :: Check if Docker Compose is installed
-where docker-compose >nul 2>nul
+docker compose version >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [ERROR] Docker Compose is not installed. Please install Docker Compose.
-    exit /b 1
+    where docker-compose >nul 2>nul
+    if %errorlevel% neq 0 (
+        echo [ERROR] Docker Compose is not installed. Please install Docker Compose.
+        exit /b 1
+    )
 )
 echo [OK] Docker Compose found!
 
@@ -45,12 +48,27 @@ if "%GPU_SUPPORT%"=="yes" (
 
 :: Load environment variables from .env
 if exist .env (
-    for /f "delims=" %%x in (.env) do (
-        echo %%x | findstr /R /C:"^[A-Za-z0-9_]*=" >nul && set %%x
+    for /f "tokens=1,2 delims==" %%A in (.env) do (
+        set "%%A=%%B"
     )
 ) else (
     echo [WARN] No .env file found! Using default settings from docker-compose.yml.
 )
+
+:: Check if `my_files/` directory exists and is NOT empty
+set DIR=my_files
+if not exist "%DIR%" (
+    echo ERROR: "%DIR%" directory is missing!
+    exit /b 1
+)
+
+dir /a-d /b "%DIR%" | findstr /r /c:"^." >nul
+if %errorlevel% neq 0 (
+    echo ERROR: "%DIR%" directory is empty! Please add files.
+    exit /b 1
+)
+
+echo [OK] "%DIR%" directory exists and is not empty.
 
 :: Start Docker Compose with appropriate flags
 echo [LAUNCH] Starting services...

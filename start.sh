@@ -12,39 +12,67 @@ echo -e "${YELLOW}================================${NC}"
 
 # ✅ Check if Docker is installed
 if ! command -v docker &> /dev/null; then
-    echo -e "${RED}❌ Docker is not installed! Please install Docker.${NC}"
+    echo -e "${RED}❌ ERROR: Docker is not installed! Please install Docker.${NC}"
     exit 1
 else
     echo -e "${GREEN}✅ Docker is installed.${NC}"
 fi
 
 # ✅ Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}❌ Docker Compose is not installed! Please install Docker Compose.${NC}"
+if ! docker compose version &> /dev/null; then
+    echo -e "${RED}❌ ERROR: Docker Compose is not installed! Please install Docker Compose.${NC}"
     exit 1
 else
     echo -e "${GREEN}✅ Docker Compose is installed.${NC}"
 fi
 
 # ✅ Check if NVIDIA GPU is available
+GPU_SUPPORT="no"
 if command -v nvidia-smi &> /dev/null; then
     echo -e "${GREEN}✅ NVIDIA GPU detected.${NC}"
+    GPU_SUPPORT="yes"
 
     # ✅ Check if NVIDIA Container Toolkit is installed
     if ! docker info | grep -q "nvidia"; then
-        echo -e "${RED}❌ NVIDIA Container Toolkit is not installed!${NC}"
-        echo -e "${YELLOW}🔧 Install it!${NC}"
+        echo -e "${RED}❌ ERROR: NVIDIA Container Toolkit is not installed!${NC}"
+        echo -e "${YELLOW}🔧 Install it using: ${NC}"
+        echo -e "   sudo apt install -y nvidia-container-toolkit"
         exit 1
     else
         echo -e "${GREEN}✅ NVIDIA Container Toolkit is installed.${NC}"
-        sed -i 's/DOCKER_RUNTIME=runc/DOCKER_RUNTIME=nvidia/' .env  # Update .env dynamically
+
+        # ✅ Update `.env` ONLY if it exists & contains `DOCKER_RUNTIME`
+        if [ -f .env ] && grep -q "DOCKER_RUNTIME=" .env; then
+            sed -i 's/DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' .env
+        fi
     fi
 else
     echo -e "${YELLOW}⚠️ No NVIDIA GPU detected. Running on CPU.${NC}"
-    sed -i 's/DOCKER_RUNTIME=nvidia/DOCKER_RUNTIME=runc/' .env  # Ensure CPU mode
+
+    # ✅ Update `.env` ONLY if it exists & contains `DOCKER_RUNTIME`
+    if [ -f .env ] && grep -q "DOCKER_RUNTIME=" .env; then
+        sed -i 's/DOCKER_RUNTIME=.*/DOCKER_RUNTIME=runc/' .env
+    fi
 fi
 
-echo -e "${YELLOW}🚀 Starting TTYD...${NC}"
+# ✅ Check if `my_files/` directory exists & is NOT empty
+DIR="my_files"
+if [ ! -d "$DIR" ]; then
+    echo -e "${RED}❌ ERROR: '$DIR' directory is missing!${NC}"
+    exit 1
+fi
 
-# ✅ Start the container
-docker compose up --build
+if [ -z "$(ls -A $DIR 2>/dev/null)" ]; then
+    echo -e "${RED}❌ ERROR: '$DIR' directory is empty! Please add files.${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ '$DIR' directory exists and is not empty.${NC}"
+
+# ✅ Start Services
+echo -e "${YELLOW}🚀 Starting TTYD...${NC}"
+if [ "$GPU_SUPPORT" = "yes" ]; then
+    docker compose --env-file .env up --build --gpus all
+else
+    docker compose --env-file .env up --build
+fi
