@@ -26,22 +26,6 @@ else
     echo -e "${GREEN}✅ Docker Compose is installed.${NC}"
 fi
 
-# ✅ Check if Ollama is installed
-if ! command -v ollama &> /dev/null; then
-    echo -e "${RED}❌ Ollama is not installed! Please install Ollama: https://ollama.com${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✅ Ollama is installed.${NC}"
-fi
-
-# ✅ Check if Ollama is running
-if ! pgrep -f "ollama" > /dev/null; then
-    echo -e "${RED}❌ Ollama is not running! Please start Ollama before launching TTYD.${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✅ Ollama is running.${NC}"
-fi
-
 # ✅ Check if NVIDIA GPU is available
 if command -v nvidia-smi &> /dev/null; then
     echo -e "${GREEN}✅ NVIDIA GPU detected.${NC}"

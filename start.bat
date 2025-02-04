@@ -22,22 +22,6 @@ if %errorlevel% neq 0 (
 )
 echo [OK] Docker Compose found!
 
-:: Check if Ollama is installed
-where ollama >nul 2>nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Ollama is not installed. Please install Ollama from https://ollama.com.
-    exit /b 1
-)
-echo [OK] Ollama found!
-
-:: Check if Ollama is running
-curl -s --head http://localhost:11434 | find "200 OK" >nul
-if %errorlevel% neq 0 (
-    echo [ERROR] Ollama server is NOT running. Please start it manually.
-    exit /b 1
-)
-echo [OK] Ollama is running!
-
 :: Detect NVIDIA GPU
 where nvidia-smi >nul 2>nul
 if %errorlevel% neq 0 (
