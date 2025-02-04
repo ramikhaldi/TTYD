@@ -16,6 +16,8 @@
 
 - ✅ **Works Offline** – No internet dependency.
 
+- ✅ **Cites Its Sources** – Ensures responses are trustworthy and reduces hallucinations.
+
 TTYD is ideal for **researchers, businesses, and privacy-conscious users** who want **secure, local AI-driven document querying**. 🧠💡
 
 ---
