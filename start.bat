@@ -58,7 +58,7 @@ if exist .env (
 :: Check if `my_files/` directory exists and is NOT empty
 set DIR=my_files
 if not exist "%DIR%" (
-    echo ERROR: "%DIR%" directory is missing!
+    echo ERROR: "%DIR%" directory is missing. Please create it and add your files before running the application!
     exit /b 1
 )
 

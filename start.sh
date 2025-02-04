@@ -58,7 +58,7 @@ fi
 # ✅ Check if `my_files/` directory exists & is NOT empty
 DIR="my_files"
 if [ ! -d "$DIR" ]; then
-    echo -e "${RED}❌ ERROR: '$DIR' directory is missing!${NC}"
+    echo -e "${RED}❌ ERROR: '$DIR' directory is missing! Please create it and add your files before running the application!${NC}"
     exit 1
 fi
 
