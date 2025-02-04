@@ -42,6 +42,7 @@ Before using TTYD, ensure **[Ollama](https://ollama.com)** is installed and runn
 
 - Install **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**
 - Ensure WSL 2 backend is enabled (recommended for performance)
+- Make sure Linux Containers are enabled
 
 #### 🐧 **For Linux Users**
 
