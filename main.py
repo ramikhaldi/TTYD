@@ -24,9 +24,10 @@ from weaviate.classes.config import Configure, Property
 from weaviate.exceptions import WeaviateBaseError  # ✅ Correct Exception Handling
 from sentence_transformers import SentenceTransformer  # ✅ Needed for encoding queries
 from rank_bm25 import BM25Okapi  # ✅ Needed for BM25 scoring
-
+from dotenv import load_dotenv
 
 # Configuration
+load_dotenv()
 MY_FILES_DIR = "./my_files"
 INSTRUCTIONS_FILE = "/app/instructions.txt"
 SUPPORTED_FILE_TYPES = ["*.json", "*.pdf", "*.docx", "*.xlsx"]
@@ -39,6 +40,9 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST")
 OLLAMA_PORT = os.getenv("OLLAMA_PORT")
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 OLLAMA_SERVER = f"{OLLAMA_SCHEMA}://{OLLAMA_HOST}:{OLLAMA_PORT}"
+
+print(f"OLLAMA_SERVER: {OLLAMA_SERVER}")
+OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 
 # Weaviate Configuration
 WEAVIATE_HOST = os.getenv("WEAVIATE_HOST")

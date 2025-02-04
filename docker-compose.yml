@@ -15,8 +15,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-          ollama_check_server:
-            condition: service_completed_successfully  # ✅ Only start if Ollama check succeeds
+      ollama_check_server:
+        condition: service_completed_successfully  # ✅ Only start if Ollama check succeeds
 
   weaviate:
     image: semitechnologies/weaviate:latest
@@ -28,8 +28,21 @@ services:
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
       - PERSISTENCE_DATA_PATH=/var/lib/weaviate
     depends_on:
-          ollama_check_server:
-            condition: service_completed_successfully  # ✅ Only start if Ollama check succeeds
+      ollama_check_server:
+        condition: service_completed_successfully  # ✅ Only start if Ollama check succeeds
+
+  ollama:
+    image: ollama/ollama:latest  # ✅ Official Ollama container
+    container_name: ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama  # ✅ Persistent model storage
+    environment:
+      - OLLAMA_MODEL=${MODEL_NAME}  # ✅ Auto-load the model at startup
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   ollama_check_server:
     image: curlimages/curl:latest
@@ -37,6 +50,9 @@ services:
     restart: "no"
     env_file:
       - .env  # ✅ Load Ollama settings from .env
+    depends_on:
+      ollama:
+        condition: service_started  # ✅ Ensure Ollama starts first
     command: >
       sh -c "
       echo '🔍 Checking Ollama server at ${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT}...';
@@ -48,10 +64,9 @@ services:
       exit 0;
       "
     healthcheck:
-      test: ["CMD", "curl", "-s", "--head", "--request", "GET", "${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      test: ["CMD-SHELL", "curl -s --head --request GET ${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT} | grep '200 OK'"]
+
+
+
+volumes:
+  ollama_data:  # ✅ Persistent volume for storing models
