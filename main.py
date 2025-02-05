@@ -255,7 +255,7 @@ async def generate_answer_with_ollama(question):
         # Use tiktoken to count tokens
         encoding = tiktoken.get_encoding("cl100k_base")
         prompt_tokens = len(encoding.encode(prompt))
-        max_context_tokens = 8000 
+        max_context_tokens = 8000
         print(f"Prompt tokens: {prompt_tokens}")
         print(f"Max context tokens: {max_context_tokens}")
         if prompt_tokens >= max_context_tokens:
@@ -268,7 +268,7 @@ async def generate_answer_with_ollama(question):
             "prompt": prompt,
             "options": {
                 "temperature": float(OLLAMA_TEMPERATURE),
-                "max_ctx": max_context_tokens  # Provide the full context window; the server reserves prompt tokens internally.
+                "num_ctx": max_context_tokens  # Provide the full context window; the server reserves prompt tokens internally.
             },
             "stream": True
         }
