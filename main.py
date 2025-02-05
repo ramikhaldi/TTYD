@@ -25,6 +25,11 @@ from weaviate.exceptions import WeaviateBaseError  # ✅ Correct Exception Handl
 from sentence_transformers import SentenceTransformer  # ✅ Needed for encoding queries
 from rank_bm25 import BM25Okapi  # ✅ Needed for BM25 scoring
 from dotenv import load_dotenv
+import tiktoken
+import aiohttp
+import asyncio
+import json
+import re
 
 # Configuration
 load_dotenv()
@@ -132,8 +137,13 @@ def read_supported_files(directory):
                 content = None
 
             if content:
-                for idx, chunk in enumerate(chunk_text(content)):
-                    documents.append({"content": chunk, "source": f"{os.path.basename(filepath)}_chunk_{idx}"})
+                if filepath.endswith(".json"):
+                    # For JSON files, use the full content without chunking.
+                    documents.append({"content": content, "source": f"{os.path.basename(filepath)}_chunk_0"})
+                else:
+                    # For other file types, chunk the content.
+                    for idx, chunk in enumerate(chunk_text(content)):
+                        documents.append({"content": chunk, "source": f"{os.path.basename(filepath)}_chunk_{idx}"})
     return documents
 
 # ✅ Embed and store in Weaviate
@@ -239,34 +249,58 @@ async def generate_answer_with_ollama(question):
     Answer:
     Please generate an answer **based on the provided context** and cite sources using [number] format where applicable.
     """
-
-    print(prompt)  # Debugging: Print prompt for verification
+    print(prompt)  # Debug: Print prompt for verification
 
     try:
-        stream = chat(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
-            options={"temperature": float(OLLAMA_TEMPERATURE)},
-        )
+        # Use tiktoken to count tokens
+        encoding = tiktoken.get_encoding("cl100k_base")
+        prompt_tokens = len(encoding.encode(prompt))
+        max_context_tokens = 8000 
+        print(f"Prompt tokens: {prompt_tokens}")
+        print(f"Max context tokens: {max_context_tokens}")
+        if prompt_tokens >= max_context_tokens:
+            #TODO: More work to do here!
+            print(f"⚠️ Warning: prompt_tokens exceeded max_context_tokens!")
 
-        buffer = ""
-        for chunk in stream:
-            text = chunk.get("message", {}).get("content", "")
+        # Build the payload for the API call
+        payload = {
+            "model": MODEL_NAME,
+            "prompt": prompt,
+            "options": {
+                "temperature": float(OLLAMA_TEMPERATURE),
+                "max_ctx": max_context_tokens  # Provide the full context window; the server reserves prompt tokens internally.
+            },
+            "stream": True
+        }
 
-            if text:
-                buffer += text  # Add new text to buffer
-                words = re.findall(r'\S+\s*', buffer)  # Ensure spaces are preserved
+        url = f"{OLLAMA_SERVER}/api/generate"
 
-                for word in words[:-1]:  # Send all but the last word (keep buffer smooth)
-                    yield word
-                    await asyncio.sleep(0.01)  # Adjust speed of response
-
-                buffer = words[-1]  # Keep last word to join with the next chunk
-
-        # ✅ Send remaining text in the buffer
-        if buffer:
-            yield buffer
+        # Make an asynchronous POST request using aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                buffer = ""
+                # Process each line (each JSON object) from the streaming response
+                async for line in resp.content:
+                    line = line.decode('utf-8').strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        # Extract the response text from the JSON object
+                        chunk_text = data.get("response", "")
+                        if chunk_text:
+                            buffer += chunk_text
+                            # Optionally, yield word by word for smooth streaming
+                            words = re.findall(r'\S+\s*', buffer)
+                            for word in words[:-1]:
+                                yield word
+                                await asyncio.sleep(0.01)  # Adjust the pace as needed
+                            buffer = words[-1] if words else ""
+                    except json.JSONDecodeError:
+                        print("Error decoding JSON:", line)
+                # Yield any remaining text in the buffer
+                if buffer:
+                    yield buffer
 
         # ✅ Append the source list at the end (without chunk numbers)
         yield "\n\n**Sources:**\n" + "\n".join(
