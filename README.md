@@ -90,6 +90,7 @@ TTYD allows **fine-tuning** via **environment variables** in the `.env` file.
 
 | Parameter            | Default Value      | Description                                                             |
 | -------------------- | ------------------ | ----------------------------------------------------------------------- |
+| `TTYD_API_PORT     ` | `5000`             | TTYD Port Number                                                        |
 | `OLLAMA_TEMPERATURE` | `0.5`              | Adjusts response creativity (0 = deterministic, 1+ = diverse)           |
 | `WEAVIATE_ALPHA`     | `0.5`              | Hybrid search weight (0 = BM25 only, 1 = vector search only)            |
 | `MODEL_NAME`         | `llama3.2:3b`      | Local AI model used by Ollama                                           |
