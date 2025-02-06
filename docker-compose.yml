@@ -1,4 +1,6 @@
-version: '3.8'
+networks:
+  ttyd_internal_network:  # ✅ Define a private Docker network
+    driver: bridge
 
 services:
   chatbot:
@@ -6,7 +8,7 @@ services:
     container_name: ttyd_chatbot
     restart: always
     ports:
-      - "5000:5000"
+      - "${TTYD_API_PORT}:${TTYD_API_PORT}"
     volumes:
       - ./instructions.txt:/app/instructions.txt
       - ./my_files:/app/my_files
@@ -14,59 +16,96 @@ services:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - ttyd_internal_network
     depends_on:
       ollama_check_server:
-        condition: service_completed_successfully  # ✅ Only start if Ollama check succeeds
+        condition: service_completed_successfully  # ✅ Only start if model check succeeds
 
   weaviate:
     image: semitechnologies/weaviate:latest
     container_name: weaviate
     restart: always
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
       - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+    networks:
+      - ttyd_internal_network
     depends_on:
       ollama_check_server:
-        condition: service_completed_successfully  # ✅ Only start if Ollama check succeeds
+        condition: service_completed_successfully  # ✅ Only start if model check succeeds
 
   ollama:
-    image: ollama/ollama:latest  # ✅ Official Ollama container
+    image: ollama/ollama:latest  # ✅ Ollama Server
     container_name: ollama
     restart: always
-    ports:
-      - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama  # ✅ Persistent model storage
-    environment:
-      - OLLAMA_MODEL=${MODEL_NAME}  # ✅ Auto-load the model at startup
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    expose:
+      - "11434"  # ✅ Only accessible inside the Docker network
+
+    networks:
+      - ttyd_internal_network
+
+  ollama_model_runner:
+    image: curlimages/curl:latest
+    container_name: ollama_model_runner
+    restart: "no"
+    env_file:
+      - .env
+    networks:
+      - ttyd_internal_network
+    depends_on:
+      ollama:
+        condition: service_started  # ✅ Ensure Ollama starts first
+    command: >
+      sh -c "
+      echo '🔍 Waiting for Ollama server to be ready...';
+      until curl -s --head --request GET http://ollama:11434 | grep '200 OK'; do
+        echo '⏳ Waiting for Ollama server...';
+        sleep 2;
+      done;
+      echo '✅ Ollama server is up and running!';
+
+      echo '⬇️ Pulling model \"${MODEL_NAME}\"...';
+      curl --location 'http://ollama:11434/api/pull' \
+      --header 'Content-Type: application/json' \
+      --data '{\"model\": \"'${MODEL_NAME}'\"}';
+      echo '✅ Model \"${MODEL_NAME}\" is pulled!';
+
+      echo '🚀 Loading model \"${MODEL_NAME}\" with keep_alive: 24h...';
+      curl --location 'http://ollama:11434/api/generate' \
+      --header 'Content-Type: application/json' \
+      --data '{\"model\": \"'${MODEL_NAME}'\", \"keep_alive\": \"24h\"}';
+      echo '✅ Model \"${MODEL_NAME}\" is now preloaded!';
+      exit 0;
+      "
 
   ollama_check_server:
     image: curlimages/curl:latest
     container_name: ollama_check_server
     restart: "no"
     env_file:
-      - .env  # ✅ Load Ollama settings from .env
+      - .env
     depends_on:
-      ollama:
-        condition: service_started  # ✅ Ensure Ollama starts first
+      ollama_model_runner:
+        condition: service_completed_successfully
+    networks:
+      - ttyd_internal_network
     command: >
       sh -c "
-      echo '🔍 Checking Ollama server at ${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT}...';
-      until curl -s --head --request GET '${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT}' | grep '200 OK'; do
-        echo '⏳ Waiting for Ollama server...';
+      echo '🔍 Checking if model \"${MODEL_NAME}\" is loaded via /api/ps...';
+      until curl -s 'http://ollama:11434/api/ps' | grep -E -q '\"model\"\s*:\s*\"'${MODEL_NAME}'\"'; do
+        echo '⏳ Waiting for model \"${MODEL_NAME}\" to load...';
         sleep 2;
       done;
-      echo '✅ Ollama server is up and running!';
+      echo '✅ Model \"${MODEL_NAME}\" is loaded!';
       exit 0;
       "
     healthcheck:
-      test: ["CMD-SHELL", "curl -s --head --request GET ${OLLAMA_SCHEMA}://${OLLAMA_HOST}:${OLLAMA_PORT} | grep '200 OK'"]
-
-
+      test: ["CMD-SHELL", "curl -s --head --request GET http://ollama:11434 | grep '200 OK'"]
 
 volumes:
   ollama_data:  # ✅ Persistent volume for storing models

@@ -40,18 +40,14 @@ LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME")
 MODEL_NAME = os.getenv("MODEL_NAME")
 
 # Get Ollama's external server details
-OLLAMA_SCHEMA = os.getenv("OLLAMA_SCHEMA")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST")
-OLLAMA_PORT = os.getenv("OLLAMA_PORT")
+TTYD_API_PORT = os.getenv("TTYD_API_PORT")
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
-OLLAMA_SERVER = f"{OLLAMA_SCHEMA}://{OLLAMA_HOST}:{OLLAMA_PORT}"
-
-print(f"OLLAMA_SERVER: {OLLAMA_SERVER}")
+OLLAMA_SERVER = f"http://ollama:11434"
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 
 # Weaviate Configuration
-WEAVIATE_HOST = os.getenv("WEAVIATE_HOST")
-WEAVIATE_PORT = os.getenv("WEAVIATE_PORT")
+WEAVIATE_HOST = "weaviate"
+WEAVIATE_PORT = 8080
 WEAVIATE_ALPHA = float(os.getenv("WEAVIATE_ALPHA"))  # ✅ Configurable hybrid search parameter
 
 # Initialize FastAPI
@@ -331,13 +327,13 @@ workers = cpu_cores if cpu_cores is not None else 1  # Use number of cores, defa
 
 # Set Hypercorn configuration with workers based on the number of CPU cores
 config = hypercorn.config.Config()
-config.bind = ["0.0.0.0:5000"]  # Ensure binding is correct
+config.bind = [f"0.0.0.0:{TTYD_API_PORT}"]  # Ensure binding is correct
 config.alpn_protocols = ["h2", "http/1.1"]  # Explicitly allow HTTP/2 first
 config.workers = workers  # Set the number of workers based on the number of CPU cores
 config.accesslog = "-"
 
 # Run the Hypercorn server with multiprocessing support (using asyncio)
 if __name__ == "__main__":
-    print(f"🚀 Starting server with {workers} workers on port 5000...")
+    print(f"🚀 Starting server with {workers} workers on port {TTYD_API_PORT} ...")
     # Use the correct asyncio method to start the server
     asyncio.run(hypercorn.asyncio.serve(app, config))
