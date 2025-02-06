@@ -16,3 +16,4 @@ pypdf
 sentence-transformers
 bs4
 aiohttp
+tiktoken
