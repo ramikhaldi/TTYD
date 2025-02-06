@@ -124,7 +124,7 @@ def read_supported_files(directory):
     for file_type in SUPPORTED_FILE_TYPES:
         for filepath in glob.glob(os.path.join(directory, file_type)):
             if filepath.endswith(".json"):
-                with open(filepath, "r", encoding="utf-8") as file:
+                with open(filepath, "r", encoding="utf-8", errors="replace") as file:
                     content = file.read()
             elif filepath.endswith(".pdf"):
                 content = "\n".join([page.extract_text() or "" for page in PdfReader(filepath).pages])
