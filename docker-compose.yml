@@ -7,6 +7,7 @@ services:
     build: .
     container_name: ttyd_chatbot
     restart: always
+    privileged: true
     ports:
       - "${TTYD_API_PORT}:${TTYD_API_PORT}"
     volumes:
@@ -26,6 +27,7 @@ services:
     image: semitechnologies/weaviate:latest
     container_name: weaviate
     restart: always
+    privileged: true
     expose:
       - "8080"
     environment:
@@ -41,6 +43,7 @@ services:
     image: ollama/ollama:latest  # ✅ Ollama Server
     container_name: ollama
     restart: always
+    privileged: true
     volumes:
       - ollama_data:/root/.ollama  # ✅ Persistent model storage
     expose:
@@ -53,6 +56,7 @@ services:
     image: curlimages/curl:latest
     container_name: ollama_model_runner
     restart: "no"
+    privileged: true
     env_file:
       - .env
     networks:
@@ -87,6 +91,7 @@ services:
     image: curlimages/curl:latest
     container_name: ollama_check_server
     restart: "no"
+    privileged: true
     env_file:
       - .env
     depends_on:
