@@ -56,14 +56,15 @@ cd ttyd
 ```
 
 ### 2️⃣ **Run TTYD**
-#### 🔹 **On Linux/macOS**
-```sh
-./start.sh
-```
 
 #### 🔹 **On Windows**
 ```sh
 start.bat
+```
+
+#### 🔹 **On Linux/macOS**
+```sh
+./start.sh
 ```
 
 This **automatically performs a comprehensive sanity check**, verifying:
@@ -71,6 +72,26 @@ This **automatically performs a comprehensive sanity check**, verifying:
 - ✅ **NVIDIA GPU support & containerization**
 
 If any issue is detected, the script will provide **clear guidance on how to fix it**.
+
+If you want TTYD to **be installed & automatically start on boot**, run the installation script:
+
+```sh
+$ chmod +x install_service.sh
+$ ./install_service.sh
+```
+
+Once installed, you can check the service status:
+
+```sh
+$ sudo systemctl status agentme
+```
+
+To **uninstall the service**, run:
+
+```sh
+$ chmod +x uninstall_service.sh
+$ ./uninstall_service.sh
+```
 
 ---
 
