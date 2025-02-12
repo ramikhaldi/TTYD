@@ -9,6 +9,7 @@ import weaviate
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from ollama import chat
 from pypdf import PdfReader  # ✅ Use pypdf instead of PyPDF2
@@ -52,6 +53,14 @@ WEAVIATE_ALPHA = float(os.getenv("WEAVIATE_ALPHA"))  # ✅ Configurable hybrid s
 
 # Initialize FastAPI
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"], 
+)
 
 # ✅ Define `ensure_collection_exists` **before** it's used
 def ensure_collection_exists(client, collection_name="Document"):

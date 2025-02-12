@@ -23,6 +23,27 @@ services:
       ollama_check_server:
         condition: service_completed_successfully  # ✅ Only start if model check succeeds
 
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: ttyd_ui
+    restart: always
+    ports:
+      - "${TTYD_UI_PORT}:${TTYD_UI_PORT}"
+    volumes:
+      - ./ui:/app/ui
+    networks:
+      - ttyd_internal_network
+    depends_on:
+      - chatbot
+    env_file:
+      - .env
+    environment:
+      - REACT_APP_TTYD_API_PORT=${TTYD_API_PORT}
+      - REACT_APP_TTYD_UI_PORT=${TTYD_UI_PORT}
+      - REACT_APP_CHATBOT_HOST=host.docker.internal
+
   weaviate:
     image: semitechnologies/weaviate:latest
     container_name: ttyd_weaviate
