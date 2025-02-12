@@ -47,7 +47,6 @@ if command -v nvidia-smi &> /dev/null && nvidia-smi -L &> /dev/null; then
 
     # ✅ Generate `docker-compose.override.yml` to enable GPU only for `ollama`
     cat <<EOF > docker-compose.override.yml
-version: '3.8'
 services:
   ollama:
     deploy:

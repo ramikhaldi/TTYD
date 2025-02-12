@@ -48,8 +48,7 @@ if "%GPU_SUPPORT%"=="yes" (
         echo [OK] NVIDIA Container Toolkit is installed. GPU acceleration enabled!
 
         :: Generate override file for ollama service
-        echo version: '3.8' > docker-compose.override.yml
-        echo services: >> docker-compose.override.yml
+        echo services: > docker-compose.override.yml
         echo   ollama: >> docker-compose.override.yml
         echo     deploy: >> docker-compose.override.yml
         echo       resources: >> docker-compose.override.yml
