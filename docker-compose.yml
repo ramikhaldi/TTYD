@@ -25,7 +25,7 @@ services:
 
   weaviate:
     image: semitechnologies/weaviate:latest
-    container_name: weaviate
+    container_name: ttyd_weaviate
     restart: always
     privileged: true
     expose:
@@ -41,7 +41,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest  # ✅ Ollama Server
-    container_name: ollama
+    container_name: ttyd_ollama
     restart: always
     privileged: true
     volumes:
@@ -54,7 +54,7 @@ services:
 
   ollama_model_runner:
     image: curlimages/curl:latest
-    container_name: ollama_model_runner
+    container_name: ttyd_ollama_model_runner
     restart: "no"
     privileged: true
     env_file:
@@ -89,7 +89,7 @@ services:
 
   ollama_check_server:
     image: curlimages/curl:latest
-    container_name: ollama_check_server
+    container_name: ttyd_ollama_check_server
     restart: "no"
     privileged: true
     env_file:
