@@ -26,9 +26,12 @@ else
     echo -e "${GREEN}✅ Docker Compose is installed.${NC}"
 fi
 
+# ✅ Remove any existing `docker-compose.override.yml`
+rm -f docker-compose.override.yml
+
 # ✅ Check if NVIDIA GPU is available
 GPU_SUPPORT="no"
-if command -v nvidia-smi &> /dev/null; then
+if command -v nvidia-smi &> /dev/null && nvidia-smi -L &> /dev/null; then
     echo -e "${GREEN}✅ NVIDIA GPU detected.${NC}"
     GPU_SUPPORT="yes"
 
@@ -40,19 +43,24 @@ if command -v nvidia-smi &> /dev/null; then
         exit 1
     else
         echo -e "${GREEN}✅ NVIDIA Container Toolkit is installed.${NC}"
-
-        # ✅ Update `.env` ONLY if it exists & contains `DOCKER_RUNTIME`
-        if [ -f .env ] && grep -q "DOCKER_RUNTIME=" .env; then
-            sed -i 's/DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' .env
-        fi
     fi
+
+    # ✅ Generate `docker-compose.override.yml` to enable GPU only for `ollama`
+    cat <<EOF > docker-compose.override.yml
+version: '3.8'
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+EOF
+    echo -e "${GREEN}✅ GPU support enabled for 'ollama' in docker-compose.override.yml.${NC}"
 else
-    echo -e "${YELLOW}⚠️ No NVIDIA GPU detected. Running on CPU.${NC}"
-
-    # ✅ Update `.env` ONLY if it exists & contains `DOCKER_RUNTIME`
-    if [ -f .env ] && grep -q "DOCKER_RUNTIME=" .env; then
-        sed -i 's/DOCKER_RUNTIME=.*/DOCKER_RUNTIME=runc/' .env
-    fi
+    echo -e "${YELLOW}⚠️ No NVIDIA GPU detected. Running in CPU mode.${NC}"
 fi
 
 # ✅ Check if `my_files/` directory exists & is NOT empty
@@ -71,8 +79,4 @@ echo -e "${GREEN}✅ '$DIR' directory exists and is not empty.${NC}"
 
 # ✅ Start Services
 echo -e "${YELLOW}🚀 Starting TTYD...${NC}"
-if [ "$GPU_SUPPORT" = "yes" ]; then
-    docker compose --env-file .env up --build --gpus all
-else
-    docker compose --env-file .env up --build
-fi
+docker compose --env-file .env up --build
