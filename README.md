@@ -131,6 +131,7 @@ TTYD processes the following document types:
 - 📝 **Word Docs** (`.docx`)
 - 📊 **Excel Sheets** (`.xlsx`)
 - 📜 **JSON Files** (`.json`)
+- 📈 **PowerPoint** (`.pptx, .ppt`)
 
 To use your own files, **place them in** `my_files/` **before starting TTYD.**
 

@@ -31,12 +31,13 @@ import aiohttp
 import asyncio
 import json
 import re
+from pptx import Presentation  # Import pptx library
 
 # Configuration
 load_dotenv()
 MY_FILES_DIR = "./my_files"
 INSTRUCTIONS_FILE = "/app/instructions.txt"
-SUPPORTED_FILE_TYPES = ["*.json", "*.pdf", "*.docx", "*.xlsx"]
+SUPPORTED_FILE_TYPES = ["*.json", "*.pdf", "*.docx", "*.xlsx", "*.pptx", "*.ppt"]
 LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME")
 MODEL_NAME = os.getenv("MODEL_NAME")
 
@@ -45,6 +46,7 @@ TTYD_API_PORT = os.getenv("TTYD_API_PORT")
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 OLLAMA_SERVER = f"http://ollama:11434"
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
+TTYD_UI_PORT = os.getenv("TTYD_UI_PORT")
 
 # Weaviate Configuration
 WEAVIATE_HOST = "weaviate"
@@ -138,6 +140,27 @@ def read_supported_files(directory):
             elif filepath.endswith(".xlsx"):
                 excel_data = pd.ExcelFile(filepath)
                 content = "\n".join(excel_data.parse(sheet).to_string(index=False, header=True) for sheet in excel_data.sheet_names)
+            elif filepath.endswith(".pptx") or filepath.endswith(".ppt"):
+                # Handle PPTX and PPT files
+                presentation = Presentation(filepath)
+                
+                # Iterate over slides
+                for slide_idx, slide in enumerate(presentation.slides):
+                    content = ""
+                    
+                    # Iterate over shapes to collect text from all text-containing shapes
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text"):  # Check if the shape contains text
+                            # Clean up extra new lines and spaces
+                            cleaned_text = shape.text.strip().replace('\r', '')  # Remove carriage returns
+                            cleaned_text = re.sub(r'(\n\s*){2,}', '\n', cleaned_text)  # Replace multiple new lines with a single new line
+                            content += cleaned_text + " "  # Add space between texts from shapes
+                    
+                    # Instead of chunking the text, store the whole slide text as one chunk
+                    documents.append({"content": content.strip(), "source": f"{os.path.basename(filepath)}_slide_{slide_idx}_chunk_0"})
+                    print("------------")
+                    print(content)
+                    print("------------------")
             else:
                 content = None
 
@@ -148,6 +171,9 @@ def read_supported_files(directory):
                 else:
                     # For other file types, chunk the content.
                     for idx, chunk in enumerate(chunk_text(content)):
+                        # print("-----------")
+                        # print(chunk)
+                        # print("-----------")
                         documents.append({"content": chunk, "source": f"{os.path.basename(filepath)}_chunk_{idx}"})
     return documents
 

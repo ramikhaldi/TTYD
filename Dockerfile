@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Download NLTK data inside the container
 RUN python -m nltk.downloader punkt punkt_tab
 
+RUN pip install python-pptx
+
 COPY . .
 
 ENV PYTHONUNBUFFERED=1
