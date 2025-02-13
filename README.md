@@ -83,7 +83,7 @@ $ ./install_service.sh
 Once installed, you can check the service status:
 
 ```sh
-$ sudo systemctl status agentme
+$ sudo systemctl status ttyd
 ```
 
 To **uninstall the service**, run:
