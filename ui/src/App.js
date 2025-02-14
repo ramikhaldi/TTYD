@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import './App.css';
 
@@ -27,6 +27,14 @@ function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Create a ref for the bottom of the chat messages container.
+  const messagesEndRef = useRef(null);
+
+  // Scroll to the bottom whenever chatMessages change.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
 
   const addMessage = (sender, text) => {
     setChatMessages(prev => [
@@ -134,6 +142,8 @@ function App() {
               <div className="message-time">{msg.time}</div>
             </div>
           ))}
+          {/* Dummy div to scroll into view */}
+          <div ref={messagesEndRef} />
         </div>
         <div className="chat-input">
           <input
