@@ -130,6 +130,13 @@ def read_supported_files(directory):
     documents = []
     for file_type in SUPPORTED_FILE_TYPES:
         for filepath in glob.glob(os.path.join(directory, file_type)):
+            # Skip temporary files that start with '~$'
+            if os.path.basename(filepath).startswith("~$"):
+                print(f"skip temporary file: {filepath}")
+                continue
+
+            content = None  # initialize content to None
+
             if filepath.endswith(".json"):
                 with open(filepath, "r", encoding="utf-8", errors="replace") as file:
                     content = file.read()
