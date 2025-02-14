@@ -164,7 +164,7 @@ def read_supported_files(directory):
                             content += cleaned_text + " "  # Add space between texts from shapes
                     
                     # Instead of chunking the text, store the whole slide text as one chunk
-                    documents.append({"content": content.strip(), "source": f"{os.path.basename(filepath)}_slide_{slide_idx}_chunk_0"})
+                    documents.append({"content": content.strip(), "source": f"{os.path.basename(filepath)}_slide_{slide_idx + 1}_chunk_0"})
                     print("------------")
                     print(content)
                     print("------------------")
