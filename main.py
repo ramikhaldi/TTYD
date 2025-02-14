@@ -168,6 +168,8 @@ def read_supported_files(directory):
                     print("------------")
                     print(content)
                     print("------------------")
+                # Clear content to avoid re-processing the last slide's text
+                content = None
             else:
                 content = None
 
