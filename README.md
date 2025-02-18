@@ -173,12 +173,6 @@ TTYD is **open-source**, and contributions are welcome! 🎉
 
 ---
 
-## 📜 License
-
-TTYD is licensed under the **MIT License** – free to use and modify! 🛡️
-
----
-
 ## 💡 Future Roadmap
 
 ✅ Support more document types
