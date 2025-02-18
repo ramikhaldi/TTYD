@@ -518,7 +518,7 @@ async def generate_answer_with_ollama(question: str):
         # 3.5) If AgentMe is enabled, call it for the same question and yield
         # ------------------------------------------------------------------------
         if TTYD_AGENTME_ENABLED == 1:
-            agent_me_resp = await call_agentme_api(question)
+            agent_me_resp = await call_agentme_api(f"question: {question}\nanswer:{assistant_full_response}")
             yield f"\n\n--- AgentMe response ---\n{agent_me_resp}\n"
 
         # ------------------------------------------------------------------------
