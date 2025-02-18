@@ -53,7 +53,7 @@ TTYD combines **retrieval-augmented generation (RAG)** with hybrid search techni
 ### 1️⃣ **Clone the Repository**
 ```sh
 git clone https://github.com/ramikhaldi/TTYD
-cd ttyd
+cd TTYD
 # To Enable Agentic AI (pulling AgentMe project):
 git submodule update --init --recursive
 ```
