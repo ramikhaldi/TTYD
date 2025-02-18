@@ -49,6 +49,8 @@ OLLAMA_SERVER = f"http://ollama:11434"
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 TTYD_UI_PORT = os.getenv("TTYD_UI_PORT")
 LAST_N_CONVERSATION_TURNS = int(os.getenv("LAST_N_CONVERSATION_TURNS"))
+TTYD_AGENTME_ENABLED = int(os.getenv("TTYD_AGENTME_ENABLED"))
+AGENTME_API_URL = os.getenv("AGENTME_API_URL")
 
 # Weaviate Configuration
 WEAVIATE_HOST = "weaviate"
@@ -414,6 +416,27 @@ def collect_source_files(retrieved_docs: list) -> dict:
             unique_content[file_name] = doc["content"]
     return unique_content
 
+
+# ---------------- NEW: Call AgentMe if enabled ----------------
+async def call_agentme_api(question: str) -> str:
+    """
+    Call AgentMe's /chat endpoint with the user's question,
+    return the text of the response or a fallback if error.
+    """
+    payload = {"message": question}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{AGENTME_API_URL}/chat", json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # Expecting: {"response":"some text"}
+                    return data.get("response", "")
+                else:
+                    return f"[AgentMe error: status {resp.status}]"
+    except Exception as e:
+        return f"[Error calling AgentMe: {e}]"
+
+
 async def generate_answer_with_ollama(question: str):
     global conversation_log
     global conversation_history_summary
@@ -492,7 +515,14 @@ async def generate_answer_with_ollama(question: str):
                     yield buffer
 
         # ------------------------------------------------------------------------
-        # 4) Store only a summarized version of the assistant's final response
+        # 3.5) If AgentMe is enabled, call it for the same question and yield
+        # ------------------------------------------------------------------------
+        if TTYD_AGENTME_ENABLED == 1:
+            agent_me_resp = await call_agentme_api(question)
+            yield f"\n\n--- AgentMe response ---\n{agent_me_resp}\n"
+
+        # ------------------------------------------------------------------------
+        # 4) Summarize the final TTYD response for conversation history
         # ------------------------------------------------------------------------
         summarized_answer = await summarize_text(assistant_full_response)
         conversation_log.append({"role": "assistant", "content": summarized_answer})

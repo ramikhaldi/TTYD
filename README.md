@@ -54,6 +54,8 @@ TTYD combines **retrieval-augmented generation (RAG)** with hybrid search techni
 ```sh
 git clone https://github.com/ramikhaldi/TTYD
 cd ttyd
+# To Enable Agentic AI (pulling AgentMe project):
+git submodule update --init --recursive
 ```
 
 ### 2️⃣ **Run TTYD**
@@ -61,11 +63,17 @@ cd ttyd
 #### 🔹 **On Windows**
 ```sh
 start.bat
+#start AgentMe
+cd external\AgentMe
+start.bat
 ```
 
 #### 🔹 **On Linux/macOS**
 ```sh
 ./start.sh
+#start AgentMe
+cd external\AgentMe
+start.sh
 ```
 
 This **automatically performs a comprehensive sanity check**, verifying:
