@@ -6,6 +6,7 @@ import hypercorn.config
 import re
 import nltk
 import weaviate
+import psutil
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -47,13 +48,89 @@ OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 OLLAMA_SERVER = f"http://ollama:11434"
 OLLAMA_TEMPERATURE = os.getenv("OLLAMA_TEMPERATURE")
 TTYD_UI_PORT = os.getenv("TTYD_UI_PORT")
+LAST_N_CONVERSATION_TURNS = int(os.getenv("LAST_N_CONVERSATION_TURNS"))
 
 # Weaviate Configuration
 WEAVIATE_HOST = "weaviate"
 WEAVIATE_PORT = 8080
 WEAVIATE_ALPHA = float(os.getenv("WEAVIATE_ALPHA"))  # ✅ Configurable hybrid search parameter
 
-# Initialize FastAPI
+def calculate_dynamic_prompt_tokens():
+    free_ram_gb = psutil.virtual_memory().available / (1024**3)
+    print(f"Detected available system memory: {free_ram_gb:.2f} GB")
+
+    HARDCAP_TOKENS = 8192
+    RESERVED_COMPLETION_TOKENS = 512
+
+    if free_ram_gb > 16:
+        allowed_tokens = HARDCAP_TOKENS * 2
+    else:
+        allowed_tokens = HARDCAP_TOKENS
+
+    allowed_tokens -= RESERVED_COMPLETION_TOKENS
+
+    return allowed_tokens
+
+MAX_PROMPT_TOKENS = calculate_dynamic_prompt_tokens()
+print(f"Dynamic MAX_PROMPT_TOKENS = {MAX_PROMPT_TOKENS}")
+
+# =============================================================================
+# 2) MEMORY + SUMMARIES FOR LONG CONVERSATIONS
+# =============================================================================
+
+conversation_history_summary = ""
+
+# Instead of storing the *raw* user messages and assistant answers,
+# we will only store their *summaries* to reduce memory usage
+# and to avoid carrying references forward.
+conversation_log = []
+
+import re
+import aiohttp
+import json
+
+#
+# Test Summarizer (restored to original prompt text)
+#
+async def summarize_text(text: str, temperature: float = 0.2) -> str:
+    """
+    Summarize large conversation text by calling your LLM (via Ollama).
+    Removes references (e.g. [1], [2], etc.) from the final summary output.
+    """
+    prompt = f"Summarize or shorten the following text/question and do not involve in any discussion, just do it as better as possible and start immediately with summarized content, without introduction phrase:\n\n{text}"
+    print("%%%%%%%")
+    print(prompt)
+    try:
+        payload = {
+            "model": MODEL_NAME,
+            "prompt": prompt,
+            "options": {
+                "temperature": temperature,
+                "num_ctx": 2048  # fewer tokens for summarizing
+            },
+            "stream": False
+        }
+        url = f"{OLLAMA_SERVER}/api/generate"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                result_json = await resp.json()
+                # The final text is in result_json["response"]
+                raw_summary = result_json.get("response", "").strip()
+
+                # Remove bracketed references like [1], [2], etc. from the summary
+                summary_no_refs = re.sub(r"\[\w+\]", "", raw_summary)
+
+                return summary_no_refs
+    except Exception as e:
+        print(f"Error summarizing text: {e}")
+        return "Summary unavailable (error)."
+
+
+# =============================================================================
+# 3) FASTAPI SETUP
+# =============================================================================
+
 app = FastAPI()
 
 app.add_middleware(
@@ -64,7 +141,6 @@ app.add_middleware(
     allow_headers=["*"], 
 )
 
-# ✅ Define `ensure_collection_exists` **before** it's used
 def ensure_collection_exists(client, collection_name="Document"):
     try:
         return client.collections.get(collection_name)
@@ -180,9 +256,9 @@ def read_supported_files(directory):
                 else:
                     # For other file types, chunk the content.
                     for idx, chunk in enumerate(chunk_text(content)):
-                        # print("-----------")
-                        # print(chunk)
-                        # print("-----------")
+                        print("-----------")
+                        print(chunk)
+                        print("-----------")
                         documents.append({"content": chunk, "source": f"{os.path.basename(filepath)}_chunk_{idx}"})
     return documents
 
@@ -231,125 +307,209 @@ def hybrid_retrieval(question, top_k=10):
         return_properties=["content", "source"]
     )
 
-    vector_chunks = response.objects  # Correct response parsing
-    bm25_scores = bm25.get_scores(tokenize(question))
-    bm25_top_chunks = [
-        {"content": indexed_docs[i]["content"], "source": indexed_docs[i]["source"]}
-        for i in sorted(range(len(bm25_scores)), key=lambda k: bm25_scores[k], reverse=True)[:top_k]
-    ]
-
-    if not vector_chunks and not bm25_top_chunks:
+    vector_chunks = response.objects
+    if not vector_chunks:
         return [], "No relevant information found."
 
     retrieved_docs = [
         {"content": doc.properties["content"], "source": doc.properties["source"]}
         for doc in vector_chunks
-    ] + bm25_top_chunks
+    ]
+    return retrieved_docs, None
 
-    return retrieved_docs
-
-
-
-
-# ✅ Ensure this class is defined at the beginning
 class QuestionRequest(BaseModel):
     question: str
 
-# ✅ Keep generate_answer_with_ollama before calling it
-# ✅ Improved citation system and removed chunk details
-async def generate_answer_with_ollama(question):
-    retrieved_docs = hybrid_retrieval(question)
+def build_full_prompt(question: str, retrieved_docs: list) -> str:
+    global conversation_history_summary
+    global conversation_log
 
-    if not retrieved_docs:
-        yield "No relevant information found."
-        return
-
-    # ✅ Deduplicate retrieved content to avoid repeated paragraphs
+    # Deduplicate retrieved content by file
     unique_content = {}
     for doc in retrieved_docs:
-        file_name = doc['source'].split("_chunk_")[0]  # Extract actual file name without chunk details
+        file_name = doc["source"].split("_chunk_")[0]
         if file_name not in unique_content:
-            unique_content[file_name] = doc['content']
+            unique_content[file_name] = doc["content"]
 
-    # ✅ Format retrieved documents with citations
     formatted_context = "\n\n".join(
-        [f"[{i+1}] {text} (Source: {source})" for i, (source, text) in enumerate(unique_content.items())]
+        [f"[{i+1}] {txt} (Source: {fn})" for i, (fn, txt) in enumerate(unique_content.items())]
     )
 
-    # ✅ Construct the AI prompt with explicit citation instructions
-    prompt = f"""
-    {INSTRUCTIONS}
+    # Gather the last N turns from conversation_log
+    last_n_interactions = conversation_log[-(2*LAST_N_CONVERSATION_TURNS):]
 
-    Context:
-    {formatted_context}
+    conversation_text = ""
+    for item in last_n_interactions:
+        role = item["role"]
+        content = item["content"]
+        conversation_text += f"{role.capitalize()}: {content}\n"
 
-    Question:
-    {question}
+    final_prompt = f"""
+{INSTRUCTIONS}
 
-    Answer:
-    Please generate an answer **based on the provided context** and cite sources using [number] format where applicable.
+# Conversation History Summary
+{conversation_history_summary}
+
+# Recent Conversation
+{conversation_text}
+
+# Retrieved Documents
+{formatted_context}
+
+User's new question: {question}
+
+Answer:
+Please generate an answer based on all relevant context. Cite sources using [number] brackets based on the sources in the retrieved documents.
+"""
+
+    return final_prompt.strip()
+
+async def ensure_prompt_within_limit(question: str, retrieved_docs: list) -> str:
+    global conversation_history_summary
+    global conversation_log
+
+    draft_prompt = build_full_prompt(question, retrieved_docs)
+    encoding = tiktoken.get_encoding("cl100k_base")
+    token_count = len(encoding.encode(draft_prompt))
+
+    if token_count <= MAX_PROMPT_TOKENS:
+        return draft_prompt
+
+    print(f"⚠️ Prompt length {token_count} exceeds limit {MAX_PROMPT_TOKENS}. Summarizing older conversation...")
+
+    if len(conversation_log) <= 1:
+        return ""
+
+    # Summarize everything up to the last user question
+    old_part = conversation_log[:-1]
+    last_message = conversation_log[-1]  # the user’s current question
+
+    # Use the local summarizer
+    old_text = "\n".join([f'{x["role"].capitalize()}: {x["content"]}' for x in old_part])
+    summary = await summarize_text(old_text)
+
+    conversation_history_summary += "\n" + summary
+
+    # Keep only the last user question in the log
+    conversation_log = [last_message]
+
+    new_draft = build_full_prompt(question, retrieved_docs)
+    new_count = len(encoding.encode(new_draft))
+
+    if new_count > MAX_PROMPT_TOKENS:
+        print(f"⚠️ Even after summarizing, prompt length {new_count} > {MAX_PROMPT_TOKENS}.")
+        return ""
+
+    return new_draft
+
+def collect_source_files(retrieved_docs: list) -> dict:
     """
-    print(prompt)  # Debug: Print prompt for verification
+    Build a dictionary {file_name: content} matching the same indexing
+    done in build_full_prompt(). The index i+1 will correspond to [i+1].
+    """
+    unique_content = {}
+    for doc in retrieved_docs:
+        file_name = doc["source"].split("_chunk_")[0]
+        if file_name not in unique_content:
+            unique_content[file_name] = doc["content"]
+    return unique_content
+
+async def generate_answer_with_ollama(question: str):
+    global conversation_log
+    global conversation_history_summary
+
+    # ------------------------------------------------------------------------
+    # 1) Store **only a summarized version** of the user question
+    # ------------------------------------------------------------------------
+    conversation_log.append({"role": "user", "content": question})
+
+    # 2) Hybrid retrieval
+    retrieval_query = (
+        f"Conversation summary so far:\n{conversation_history_summary}\n\n"
+        f"Recent messages:\n{question}\n"
+        f"Now answer this question: {question}"
+    )
+    retrieved_docs, retrieval_error = hybrid_retrieval(retrieval_query)
+    if retrieval_error:
+        yield retrieval_error
+        return
+
+    # 3) Build final prompt (with the full question for better generation)
+    final_prompt = await ensure_prompt_within_limit(question, retrieved_docs)
+    if not final_prompt:
+        yield "I'm sorry, but the conversation is too large to process. Please start a new session."
+        return
+
+    # Collect the source mapping so we can display them at the end
+    unique_content = collect_source_files(retrieved_docs)
+
+    print("##############################################################################################")
+    print("--- FINAL PROMPT ---")
+    print(final_prompt)
+    print("--------------------")
 
     try:
-        # Use tiktoken to count tokens
         encoding = tiktoken.get_encoding("cl100k_base")
-        prompt_tokens = len(encoding.encode(prompt))
-        max_context_tokens = 8000
-        print(f"Prompt tokens: {prompt_tokens}")
-        print(f"Max context tokens: {max_context_tokens}")
-        if prompt_tokens >= max_context_tokens:
-            #TODO: More work to do here!
-            print(f"⚠️ Warning: prompt_tokens exceeded max_context_tokens!")
+        prompt_tokens = len(encoding.encode(final_prompt))
+        print(f"Prompt tokens: {prompt_tokens} / limit {MAX_PROMPT_TOKENS}")
 
-        # Build the payload for the API call
         payload = {
             "model": MODEL_NAME,
-            "prompt": prompt,
+            "prompt": final_prompt,
             "options": {
                 "temperature": float(OLLAMA_TEMPERATURE),
-                "num_ctx": max_context_tokens  # Provide the full context window; the server reserves prompt tokens internally.
+                "num_ctx": MAX_PROMPT_TOKENS
             },
             "stream": True
         }
 
         url = f"{OLLAMA_SERVER}/api/generate"
 
-        # Make an asynchronous POST request using aiohttp
+        assistant_full_response = ""
+
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
                 buffer = ""
-                # Process each line (each JSON object) from the streaming response
                 async for line in resp.content:
                     line = line.decode('utf-8').strip()
                     if not line:
                         continue
                     try:
                         data = json.loads(line)
-                        # Extract the response text from the JSON object
                         chunk_text = data.get("response", "")
                         if chunk_text:
+                            assistant_full_response += chunk_text
                             buffer += chunk_text
-                            # Optionally, yield word by word for smooth streaming
+
                             words = re.findall(r'\S+\s*', buffer)
                             for word in words[:-1]:
                                 yield word
-                                await asyncio.sleep(0.01)  # Adjust the pace as needed
+                                await asyncio.sleep(0.01)
                             buffer = words[-1] if words else ""
                     except json.JSONDecodeError:
                         print("Error decoding JSON:", line)
-                # Yield any remaining text in the buffer
                 if buffer:
                     yield buffer
 
-        # ✅ Append the source list at the end (without chunk numbers)
-        yield "\n\n**Sources:**\n" + "\n".join(
-            [f"- **[{i+1}]** {source}" for i, source in enumerate(unique_content.keys())]
-        )
+        # ------------------------------------------------------------------------
+        # 4) Store only a summarized version of the assistant's final response
+        # ------------------------------------------------------------------------
+        summarized_answer = await summarize_text(assistant_full_response)
+        conversation_log.append({"role": "assistant", "content": summarized_answer})
+
+        # ------------------------------------------------------------------------
+        # 5) Finally, append the sources used, matching [i+1] numbering
+        # ------------------------------------------------------------------------
+        sources_text = "\n\nSources:\n"
+        for i, (fn, _) in enumerate(unique_content.items()):
+            sources_text += f"[{i+1}] {fn}\n"
+
+        yield sources_text
 
     except Exception as e:
         yield f"An error occurred: {e}"
-
+    finally:
+        print("##############################################################################################")
 
 # Health check endpoint
 @app.get("/health")

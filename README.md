@@ -27,8 +27,9 @@ TTYD is ideal for **researchers, businesses, and privacy-conscious users** who w
 TTYD combines **retrieval-augmented generation (RAG)** with hybrid search techniques:
 
 - 1️⃣ **Document Ingestion** – It processes PDFs, Word, Excel, and JSON files, chunking them into smaller pieces.
-- 2️⃣ **Hybrid Search Engine** – Uses **BM25** (statistical search) and **Weaviate vector search** for accurate information retrieval.
+- 2️⃣ **Hybrid Search Engine** – Uses **Weaviate search** for accurate information retrieval.
 - 3️⃣ **AI Answering** – The retrieved context is passed to a **containerized Ollama model** (e.g., Llama 3) for response generation.
+- 4️⃣ **Maintain History** – Remembers conversation history to provide context-aware replies.
 
 ---
 
@@ -100,8 +101,16 @@ $ ./uninstall_service.sh
 TTYD supports **HTTP/2** for **real-time streaming** responses. To fully leverage streaming, disable client-side buffering in e.g., cURL:
 
 ```sh
-curl -N -X POST "http://localhost:5000/ask" -H "Content-Type: application/json" -d '{"question": "Summarize my files."}'
+curl -N -X POST "http://host.docker.internal:5000/ask" -H "Content-Type: application/json" -d '{"question": "Summarize my files."}'
 ```
+
+🖥️ TTYD UI Screenshot
+
+Once TTYD is up and running, open your browser and navigate to http://host.docker.internal:5001 (by default) to access the TTYD interface. Below is a sample screenshot of the web UI, where you can type your questions, view chat context, and receive streamed AI-powered answers in real-time:
+
+![UI Bot](resources/UI.png)
+
+
 
 ---
 
@@ -109,13 +118,15 @@ curl -N -X POST "http://localhost:5000/ask" -H "Content-Type: application/json" 
 
 TTYD allows **fine-tuning** via **environment variables** in the `.env` file.
 
-| Parameter            | Default Value      | Description                                                             |
-| -------------------- | ------------------ | ----------------------------------------------------------------------- |
-| `TTYD_API_PORT     ` | `5000`             | TTYD Port Number                                                        |
-| `OLLAMA_TEMPERATURE` | `0.5`              | Adjusts response creativity (0 = deterministic, 1+ = diverse)           |
-| `WEAVIATE_ALPHA`     | `0.5`              | Hybrid search weight (0 = BM25 only, 1 = vector search only)            |
-| `MODEL_NAME`         | `llama3.2:3b`      | Local AI model used by Ollama                                           |
-| `LOCAL_MODEL_NAME`   | `all-MiniLM-L6-v2` | Sentence Transformer model for vector search                            |
+| Parameter                     | Default Value      | Description                                                             |
+| ------------------------------| ------------------ | ----------------------------------------------------------------------- |
+| `TTYD_UI_PORT`                | `5001`             | TTYD UI Port Number                                                     |
+| `TTYD_API_PORT`               | `5000`             | TTYD Service Port Number                                                |
+| `OLLAMA_TEMPERATURE`          | `0.5`              | Adjusts response creativity (0 = deterministic, 1+ = diverse)           |
+| `WEAVIATE_ALPHA`              | `0.5`              | Hybrid search weight (0 = BM25 only, 1 = vector search only)            |
+| `MODEL_NAME`                  | `llama3.2:3b`      | Local AI model used by Ollama                                           |
+| `LOCAL_MODEL_NAME`            | `all-MiniLM-L6-v2` | Sentence Transformer model for vector search                            |
+| `LAST_N_CONVERSATION_TURNS`   | `5`                | Number of last conversation turns the chatbot should remember           |
 
 🔹 Adjust these in `.env`
 
@@ -172,13 +183,8 @@ TTYD is licensed under the **MIT License** – free to use and modify! 🛡️
 
 ✅ Support more document types
 
-✅ GUI for non-technical users
-
-✅ Maintain & Control History
-
-✅ Integration with additional AI model frameworks beyond Ollama
+✅ Enhance chunking
 
 ✅ Any Suggestions?
 
 **Enjoy private AI-powered document chat! 🏆**
-

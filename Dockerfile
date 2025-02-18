@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -m nltk.downloader punkt punkt_tab
 
 RUN pip install python-pptx
+RUN pip install psutil
 
 COPY . .
 
