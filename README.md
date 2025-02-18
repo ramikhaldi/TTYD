@@ -54,7 +54,7 @@ TTYD combines **retrieval-augmented generation (RAG)** with hybrid search techni
 ```sh
 git clone https://github.com/ramikhaldi/TTYD
 cd TTYD
-# To Enable Agentic AI (pulling AgentMe project):
+# To Enable Agentic AI (pulling AgentMe project, refer to documentation: https://github.com/ramikhaldi/AgentMe):
 git submodule update --init --recursive
 ```
 
@@ -63,7 +63,7 @@ git submodule update --init --recursive
 #### 🔹 **On Windows**
 ```sh
 start.bat
-#start AgentMe
+#start AgentMe (in case if agentic ai should be enabled)
 cd external\AgentMe
 start.bat
 ```
@@ -71,7 +71,7 @@ start.bat
 #### 🔹 **On Linux/macOS**
 ```sh
 ./start.sh
-#start AgentMe
+#start AgentMe (in case if agentic ai should be enabled)
 cd external\AgentMe
 start.sh
 ```
@@ -135,6 +135,8 @@ TTYD allows **fine-tuning** via **environment variables** in the `.env` file.
 | `MODEL_NAME`                  | `llama3.2:3b`      | Local AI model used by Ollama                                           |
 | `LOCAL_MODEL_NAME`            | `all-MiniLM-L6-v2` | Sentence Transformer model for vector search                            |
 | `LAST_N_CONVERSATION_TURNS`   | `5`                | Number of last conversation turns the chatbot should remember           |
+| `TTYD_AGENTME_ENABLED`        | `0`                | Agentic AI Enabled                                                      |
+| `AGENTME_API_URL`             | `See .env file`    | Agentic AI API URL                                                      |
 
 🔹 Adjust these in `.env`
 
