@@ -96,7 +96,7 @@ $ ./uninstall_service.sh
 
 ---
 
-## ⚡ Real-Time Streaming Responses (cURL Example)
+## ⚡ User Interface
 
 TTYD supports **HTTP/2** for **real-time streaming** responses. To fully leverage streaming, disable client-side buffering in e.g., cURL:
 
