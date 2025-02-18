@@ -63,7 +63,7 @@ git submodule update --init --recursive
 #### 🔹 **On Windows**
 ```sh
 start.bat
-#start AgentMe (in case if agentic ai should be enabled)
+#start AgentMe (in case if agentic ai is enabled)
 cd external\AgentMe
 start.bat
 ```
@@ -71,7 +71,7 @@ start.bat
 #### 🔹 **On Linux/macOS**
 ```sh
 ./start.sh
-#start AgentMe (in case if agentic ai should be enabled)
+#start AgentMe (in case if agentic ai is enabled)
 cd external\AgentMe
 start.sh
 ```
