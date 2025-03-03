@@ -138,6 +138,7 @@ TTYD allows **fine-tuning** via **environment variables** in the `.env` file.
 | `LAST_N_CONVERSATION_TURNS`   | `5`                | Number of last conversation turns the chatbot should remember           |
 | `TTYD_AGENTME_ENABLED`        | `0`                | Agentic AI Enabled                                                      |
 | `AGENTME_API_URL`             | `See .env file`    | Agentic AI API URL                                                      |
+| `STRUCTURED_RESPONSE_MODE`    | `0`                | Enable json response containing the llm response + action from agentMe  |
 
 🔹 Adjust these in `.env`
 

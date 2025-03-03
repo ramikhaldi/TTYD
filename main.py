@@ -51,6 +51,7 @@ TTYD_UI_PORT = os.getenv("TTYD_UI_PORT")
 LAST_N_CONVERSATION_TURNS = int(os.getenv("LAST_N_CONVERSATION_TURNS"))
 TTYD_AGENTME_ENABLED = int(os.getenv("TTYD_AGENTME_ENABLED"))
 AGENTME_API_URL = os.getenv("AGENTME_API_URL")
+STRUCTURED_MODE = int(os.environ.get("STRUCTURED_RESPONSE_MODE"))
 
 # Weaviate Configuration
 WEAVIATE_HOST = "weaviate"
@@ -454,13 +455,28 @@ async def generate_answer_with_ollama(question: str):
     )
     retrieved_docs, retrieval_error = hybrid_retrieval(retrieval_query)
     if retrieval_error:
-        yield retrieval_error
+        if STRUCTURED_MODE == 1:
+            # Return JSON with an error as the LLM response
+            yield json.dumps({
+                "llm_response": retrieval_error,
+                "action": ""
+            })
+        else:
+            # Return the error as plain text
+            yield retrieval_error
         return
 
-    # 3) Build final prompt (with the full question for better generation)
+    # 3) Build the final prompt (with the full question for better generation)
     final_prompt = await ensure_prompt_within_limit(question, retrieved_docs)
     if not final_prompt:
-        yield "I'm sorry, but the conversation is too large to process. Please start a new session."
+        if STRUCTURED_MODE == 1:
+            # Return JSON with the error
+            yield json.dumps({
+                "llm_response": "I'm sorry, but the conversation is too large to process. Please start a new session.",
+                "action": ""
+            })
+        else:
+            yield "I'm sorry, but the conversation is too large to process. Please start a new session."
         return
 
     # Collect the source mapping so we can display them at the end
@@ -470,6 +486,9 @@ async def generate_answer_with_ollama(question: str):
     print("--- FINAL PROMPT ---")
     print(final_prompt)
     print("--------------------")
+
+    # We will collect the full LLM response here no matter what
+    assistant_full_response = ""
 
     try:
         encoding = tiktoken.get_encoding("cl100k_base")
@@ -488,38 +507,51 @@ async def generate_answer_with_ollama(question: str):
 
         url = f"{OLLAMA_SERVER}/api/generate"
 
-        assistant_full_response = ""
-
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
-                buffer = ""
-                async for line in resp.content:
-                    line = line.decode('utf-8').strip()
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        chunk_text = data.get("response", "")
-                        if chunk_text:
-                            assistant_full_response += chunk_text
-                            buffer += chunk_text
+                if STRUCTURED_MODE == 1:
+                    # Accumulate the entire response without yielding partial chunks
+                    async for line in resp.content:
+                        line = line.decode('utf-8').strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            chunk_text = data.get("response", "")
+                            if chunk_text:
+                                assistant_full_response += chunk_text
+                        except json.JSONDecodeError:
+                            print("Error decoding JSON:", line)
+                else:
+                    # Stream partial chunks to the user (existing behavior)
+                    buffer = ""
+                    async for line in resp.content:
+                        line = line.decode('utf-8').strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                            chunk_text = data.get("response", "")
+                            if chunk_text:
+                                assistant_full_response += chunk_text
+                                buffer += chunk_text
 
-                            words = re.findall(r'\S+\s*', buffer)
-                            for word in words[:-1]:
-                                yield word
-                                await asyncio.sleep(0.01)
-                            buffer = words[-1] if words else ""
-                    except json.JSONDecodeError:
-                        print("Error decoding JSON:", line)
-                if buffer:
-                    yield buffer
+                                words = re.findall(r'\S+\s*', buffer)
+                                # Yield every complete word except the last partial one
+                                for word in words[:-1]:
+                                    yield word
+                                    await asyncio.sleep(0.01)
+                                buffer = words[-1] if words else ""
+                        except json.JSONDecodeError:
+                            print("Error decoding JSON:", line)
+                    # If there's leftover buffer text, yield that as the final chunk
+                    if buffer:
+                        yield buffer
 
-        # ------------------------------------------------------------------------
-        # 3.5) If AgentMe is enabled, call it for the same question and yield
-        # ------------------------------------------------------------------------
+        # 3.5) If AgentMe is enabled, call it for the same question
+        agent_me_resp = ""
         if TTYD_AGENTME_ENABLED == 1:
             agent_me_resp = await call_agentme_api(f"question: {question}\nanswer:{assistant_full_response}")
-            yield f"\n\n--- AgentMe response ---\n{agent_me_resp}\n"
 
         # ------------------------------------------------------------------------
         # 4) Summarize the final TTYD response for conversation history
@@ -527,17 +559,35 @@ async def generate_answer_with_ollama(question: str):
         summarized_answer = await summarize_text(assistant_full_response)
         conversation_log.append({"role": "assistant", "content": summarized_answer})
 
-        # ------------------------------------------------------------------------
-        # 5) Finally, append the sources used, matching [i+1] numbering
-        # ------------------------------------------------------------------------
+        # 5) Build sources text
         sources_text = "\n\nSources:\n"
         for i, (fn, _) in enumerate(unique_content.items()):
             sources_text += f"[{i+1}] {fn}\n"
 
-        yield sources_text
+        if STRUCTURED_MODE == 1:
+            # In structured mode, produce a single JSON with two fields:
+            #   1) llm_response (the full text from the LLM)
+            #   2) action (the AgentMe response, if any)
+            # Optionally, you could store the sources in either field
+            structured_json = {
+                "llm_response": assistant_full_response + sources_text,
+                "action": agent_me_resp
+            }
+            yield json.dumps(structured_json)
+        else:
+            # Existing approach: Output final AgentMe text, plus sources
+            if TTYD_AGENTME_ENABLED == 1 and agent_me_resp:
+                yield f"\n\n--- AgentMe response ---\n{agent_me_resp}\n"
+            yield sources_text
 
     except Exception as e:
-        yield f"An error occurred: {e}"
+        if STRUCTURED_MODE == 1:
+            yield json.dumps({
+                "llm_response": f"An error occurred: {e}",
+                "action": ""
+            })
+        else:
+            yield f"An error occurred: {e}"
     finally:
         print("##############################################################################################")
 
