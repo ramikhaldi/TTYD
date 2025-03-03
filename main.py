@@ -81,7 +81,6 @@ print(f"Dynamic MAX_PROMPT_TOKENS = {MAX_PROMPT_TOKENS}")
 # 2) MEMORY + SUMMARIES FOR LONG CONVERSATIONS
 # =============================================================================
 
-conversation_history_summary = ""
 
 # Instead of storing the *raw* user messages and assistant answers,
 # we will only store their *summaries* to reduce memory usage
@@ -324,7 +323,6 @@ class QuestionRequest(BaseModel):
     question: str
 
 def build_full_prompt(question: str, retrieved_docs: list) -> str:
-    global conversation_history_summary
     global conversation_log
 
     # Deduplicate retrieved content by file
@@ -350,9 +348,6 @@ def build_full_prompt(question: str, retrieved_docs: list) -> str:
     final_prompt = f"""
 {INSTRUCTIONS}
 
-# Conversation History Summary
-{conversation_history_summary}
-
 # Recent Conversation
 {conversation_text}
 
@@ -368,7 +363,6 @@ Please generate an answer based on all relevant context. Cite sources using [num
     return final_prompt.strip()
 
 async def ensure_prompt_within_limit(question: str, retrieved_docs: list) -> str:
-    global conversation_history_summary
     global conversation_log
 
     draft_prompt = build_full_prompt(question, retrieved_docs)
@@ -390,8 +384,6 @@ async def ensure_prompt_within_limit(question: str, retrieved_docs: list) -> str
     # Use the local summarizer
     old_text = "\n".join([f'{x["role"].capitalize()}: {x["content"]}' for x in old_part])
     summary = await summarize_text(old_text)
-
-    conversation_history_summary += "\n" + summary
 
     # Keep only the last user question in the log
     conversation_log = [last_message]
@@ -440,7 +432,6 @@ async def call_agentme_api(question: str) -> str:
 
 async def generate_answer_with_ollama(question: str):
     global conversation_log
-    global conversation_history_summary
 
     # ------------------------------------------------------------------------
     # 1) Store **only a summarized version** of the user question
@@ -449,7 +440,6 @@ async def generate_answer_with_ollama(question: str):
 
     # 2) Hybrid retrieval
     retrieval_query = (
-        f"Conversation summary so far:\n{conversation_history_summary}\n\n"
         f"Recent messages:\n{question}\n"
         f"Now answer this question: {question}"
     )
@@ -551,7 +541,14 @@ async def generate_answer_with_ollama(question: str):
         # 3.5) If AgentMe is enabled, call it for the same question
         agent_me_resp = ""
         if TTYD_AGENTME_ENABLED == 1:
-            agent_me_resp = await call_agentme_api(f"question: {question}\nanswer:{assistant_full_response}")
+            last_n_interactions = conversation_log[-(2*LAST_N_CONVERSATION_TURNS):]
+            conversation_text = ""
+            for item in last_n_interactions:
+                role = item["role"]
+                content = item["content"]
+                conversation_text += f"{role.capitalize()}: {content}\n"
+                
+            agent_me_resp = await call_agentme_api(conversation_text)
 
         # ------------------------------------------------------------------------
         # 4) Summarize the final TTYD response for conversation history
