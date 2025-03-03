@@ -593,6 +593,15 @@ async def generate_answer_with_ollama(question: str):
 async def health_check():
     return JSONResponse(content={"status": "ok"})
 
+@app.post("/clear_session")
+async def clear_session():
+    """
+    Clears the conversation history to start a fresh session.
+    """
+    global conversation_log
+    conversation_log = []
+    return JSONResponse(content={"message": "Conversation log cleared."})
+
 # ✅ Define FastAPI endpoint AFTER defining QuestionRequest and generate_answer_with_ollama
 @app.post("/ask")
 async def ask(request: QuestionRequest):
