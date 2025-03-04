@@ -8,7 +8,7 @@ import nltk
 import weaviate
 import psutil
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -81,11 +81,22 @@ print(f"Dynamic MAX_PROMPT_TOKENS = {MAX_PROMPT_TOKENS}")
 # 2) MEMORY + SUMMARIES FOR LONG CONVERSATIONS
 # =============================================================================
 
+# >>> Session-based conversation logs <<<
+session_logs: dict[str, list] = {}
 
-# Instead of storing the *raw* user messages and assistant answers,
-# we will only store their *summaries* to reduce memory usage
-# and to avoid carrying references forward.
-conversation_log = []
+def get_conversation_log(session_id: str) -> list:
+    """
+    Retrieve the conversation log for a given session_id.
+    If it doesn't exist yet, initialize it to an empty list.
+    """
+    global session_logs
+    if session_id not in session_logs:
+        session_logs[session_id] = []
+    return session_logs[session_id]
+
+def clear_conversation_log(session_id: str):
+    global session_logs
+    session_logs[session_id] = []
 
 import re
 import aiohttp
@@ -320,10 +331,13 @@ def hybrid_retrieval(question, top_k=10):
     return retrieved_docs, None
 
 class QuestionRequest(BaseModel):
+    # Session ID is optional from the client; default to 0 if missing
+    session_id: str = "0"
     question: str
 
-def build_full_prompt(question: str, retrieved_docs: list) -> str:
-    global conversation_log
+def build_full_prompt(session_id: str, question: str, retrieved_docs: list) -> str:
+    # Use the conversation log for this session
+    conversation_log = get_conversation_log(session_id)
 
     # Deduplicate retrieved content by file
     unique_content = {}
@@ -362,10 +376,9 @@ Please generate an answer based on all relevant context. Cite sources using [num
 
     return final_prompt.strip()
 
-async def ensure_prompt_within_limit(question: str, retrieved_docs: list) -> str:
-    global conversation_log
-
-    draft_prompt = build_full_prompt(question, retrieved_docs)
+async def ensure_prompt_within_limit(session_id: str, question: str, retrieved_docs: list) -> str:
+    conversation_log = get_conversation_log(session_id)
+    draft_prompt = build_full_prompt(session_id, question, retrieved_docs)
     encoding = tiktoken.get_encoding("cl100k_base")
     token_count = len(encoding.encode(draft_prompt))
 
@@ -386,9 +399,10 @@ async def ensure_prompt_within_limit(question: str, retrieved_docs: list) -> str
     summary = await summarize_text(old_text)
 
     # Keep only the last user question in the log
-    conversation_log = [last_message]
+    clear_conversation_log(session_id)
+    get_conversation_log(session_id).append(last_message)
 
-    new_draft = build_full_prompt(question, retrieved_docs)
+    new_draft = build_full_prompt(session_id, question, retrieved_docs)
     new_count = len(encoding.encode(new_draft))
 
     if new_count > MAX_PROMPT_TOKENS:
@@ -409,7 +423,6 @@ def collect_source_files(retrieved_docs: list) -> dict:
             unique_content[file_name] = doc["content"]
     return unique_content
 
-
 # ---------------- NEW: Call AgentMe if enabled ----------------
 async def call_agentme_api(question: str) -> str:
     """
@@ -429,16 +442,14 @@ async def call_agentme_api(question: str) -> str:
     except Exception as e:
         return f"[Error calling AgentMe: {e}]"
 
+async def generate_answer_with_ollama(session_id: str, question: str):
+    # 1) Retrieve the conversation log for this session
+    conversation_log = get_conversation_log(session_id)
 
-async def generate_answer_with_ollama(question: str):
-    global conversation_log
-
-    # ------------------------------------------------------------------------
-    # 1) Store **only a summarized version** of the user question
-    # ------------------------------------------------------------------------
+    # 2) Append the user message to that log
     conversation_log.append({"role": "user", "content": question})
 
-    # 2) Hybrid retrieval
+    # 3) Hybrid retrieval
     retrieval_query = (
         f"Recent messages:\n{question}\n"
         f"Now answer this question: {question}"
@@ -456,8 +467,8 @@ async def generate_answer_with_ollama(question: str):
             yield retrieval_error
         return
 
-    # 3) Build the final prompt (with the full question for better generation)
-    final_prompt = await ensure_prompt_within_limit(question, retrieved_docs)
+    # 4) Build the final prompt
+    final_prompt = await ensure_prompt_within_limit(session_id, question, retrieved_docs)
     if not final_prompt:
         if STRUCTURED_MODE == 1:
             # Return JSON with the error
@@ -513,7 +524,7 @@ async def generate_answer_with_ollama(question: str):
                         except json.JSONDecodeError:
                             print("Error decoding JSON:", line)
                 else:
-                    # Stream partial chunks to the user (existing behavior)
+                    # Stream partial chunks to the user in real-time
                     buffer = ""
                     async for line in resp.content:
                         line = line.decode('utf-8').strip()
@@ -538,7 +549,7 @@ async def generate_answer_with_ollama(question: str):
                     if buffer:
                         yield buffer
 
-        # 3.5) If AgentMe is enabled, call it for the same question
+        # 5) If AgentMe is enabled, call it for the same question
         agent_me_resp = ""
         if TTYD_AGENTME_ENABLED == 1:
             last_n_interactions = conversation_log[-(2*LAST_N_CONVERSATION_TURNS):]
@@ -547,20 +558,18 @@ async def generate_answer_with_ollama(question: str):
                 role = item["role"]
                 content = item["content"]
                 conversation_text += f"{role.capitalize()}: {content}\n"
-                
             agent_me_resp = await call_agentme_api(conversation_text)
 
-        # ------------------------------------------------------------------------
-        # 4) Summarize the final TTYD response for conversation history
-        # ------------------------------------------------------------------------
+        # 6) Summarize the final response for storing in conversation history
         summarized_answer = await summarize_text(assistant_full_response)
         conversation_log.append({"role": "assistant", "content": summarized_answer})
 
-        # 5) Build sources text
+        # 7) Build sources text
         sources_text = "\n\nSources:\n"
         for i, (fn, _) in enumerate(unique_content.items()):
             sources_text += f"[{i+1}] {fn}\n"
 
+        # 8) Final output
         if STRUCTURED_MODE == 1:
             # In structured mode, produce a single JSON with two fields:
             #   1) llm_response (the full text from the LLM)
@@ -593,22 +602,29 @@ async def generate_answer_with_ollama(question: str):
 async def health_check():
     return JSONResponse(content={"status": "ok"})
 
-@app.post("/clear_session")
-async def clear_session():
+# >>> CHANGED TO GET + optional session_id <<<
+@app.get("/clear_session")
+async def clear_session(session_id: str = Query("0")):
     """
-    Clears the conversation history to start a fresh session.
+    Clears the conversation history for the specified session ID (default=0).
     """
-    global conversation_log
-    conversation_log = []
-    return JSONResponse(content={"message": "Conversation log cleared."})
+    clear_conversation_log(session_id)
+    return JSONResponse(content={"message": f"Conversation log cleared for session_id={session_id}."})
 
-# ✅ Define FastAPI endpoint AFTER defining QuestionRequest and generate_answer_with_ollama
 @app.post("/ask")
 async def ask(request: QuestionRequest):
+    """
+    The user sends { "question": "...", "session_id": "123" }.
+    If session_id is omitted, we treat it as 0.
+    """
     if not request.question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     
-    return StreamingResponse(generate_answer_with_ollama(request.question), media_type="text/plain")
+    # Extract session_id (or default to "0")
+    session_id = request.session_id or "0"
+
+    # Pass it into the streaming generator
+    return StreamingResponse(generate_answer_with_ollama(session_id, request.question), media_type="text/plain")
 
 
 # Determine the number of CPU cores and set the number of workers accordingly
