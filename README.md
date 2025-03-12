@@ -54,9 +54,8 @@ TTYD combines **retrieval-augmented generation (RAG)** with hybrid search techni
 ```sh
 git clone https://github.com/ramikhaldi/TTYD
 cd TTYD
-# To Enable Agentic AI, pull the submodule and enable AgentMe
+# To Enable Agentic AI, pull & start AgentMe in parallel and enable AgentMe integration in this project
 # See .env file and refer to the AgentMe documentation: https://github.com/ramikhaldi/AgentMe
-git submodule update --init --recursive
 ```
 
 ### 2️⃣ **Run TTYD**
@@ -65,16 +64,12 @@ git submodule update --init --recursive
 ```sh
 start.bat
 #start AgentMe (in case if agentic ai is enabled)
-cd external\AgentMe
-start.bat
 ```
 
 #### 🔹 **On Linux/macOS**
 ```sh
 ./start.sh
 #start AgentMe (in case if agentic ai is enabled)
-cd external\AgentMe
-start.sh
 ```
 
 This **automatically performs a comprehensive sanity check**, verifying:
